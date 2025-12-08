@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+/* -------------------------------------- */
+/* 1. Global & Theme Variables */
+/* -------------------------------------- */
+:root {
+  /* Fonts */
+  font-family: 'Poppins', sans-serif, system-ui, Avenir, Helvetica, Arial;
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* Colors - Defined once for easy change */
+  --color-primary-500: #016BAE;
+  --color-primary-600: #005a9c;
+  --color-accent-orange: #FF4C00;
+  --color-danger: #ef4444; /* red-500 */
+  --color-success: #10b981; /* green-500 */
+  --color-info: #3b82f6; /* blue-500 */
+  
+  /* Layout */
+  --sidebar-width: 260px;
+  --header-height: 64px;
+  --page-padding-x: 32px;
+  --page-padding-y: 24px;
+  
+  /* Modal Safe Areas */
+  --modal-top-offset: 2rem;
+  --modal-bottom-offset: 6rem;
+  --taskbar-safe-area: 8rem;
+}
+
+/* -------------------------------------- */
+/* 2. Base Resets */
+/* -------------------------------------- */
+a {
+  font-weight: 500;
+  color: var(--color-primary-500);
+  text-decoration: inherit;
+}
+a:hover {
+  color: var(--color-primary-600);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+/* Ensure full height for layout */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+/* -------------------------------------- */
+/* 3. Modal & Overlay Utilities */
+/* -------------------------------------- */
+.modal-overlay {
+  padding-top: var(--modal-top-offset);
+  padding-bottom: var(--modal-bottom-offset);
+  overflow-y: auto;
+}
+
+.modal-panel {
+  margin: 1rem;
+  max-height: calc(100vh - var(--modal-top-offset) - var(--modal-bottom-offset));
+  overflow-y: auto;
+}
+
+.floating-ui-safe {
+  bottom: var(--taskbar-safe-area);
+}
+
+/* -------------------------------------- */
+/* 3. Utility Classes */
+/* -------------------------------------- */
+
+/* Custom utility for the hero headline gradient effect based on user's specification */
+.text-gradient-hero {
+    background: linear-gradient(90deg, #7186FF 11%, var(--color-accent-orange) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Base button focus styles */
+button:focus-visible {
+  outline: 4px auto var(--color-primary-500);
+  outline-offset: 2px;
+}
+
+/* Remove global max-width containers that constrain page width */
+.container, .app-container, .page-wrapper {
+  max-width: none !important;
+  width: 100% !important;
+}
+
+/* Utility for layout background to match old style */
+.layout-bg {
+    background-color: var(--page-bg, #f7f8fb);
+}
+
+/* ==========================================================================
+ 4. NEW: Glitter Button Hover Effects 
+==========================================================================
+*/
+
+/* The button wrapper. 
+  - `relative` and `z-0` establish a stacking context.
+  - `overflow-hidden` clips the pseudo-element.
+*/
+.btn-glitter-wrapper {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 0.75rem; /* 12px */
+}
+
+/* The button itself.
+  - `relative` and `z-10` place it *above* the pseudo-element.
+  - `transition-all` ensures all effects (transform, background) are smooth.
+*/
+.btn-glitter {
+  position: relative;
+  z-index: 10;
+  transition: all 0.3s ease-in-out;
+}
+
+/* The hover state for the button.
+  - Lifts the button (`translateY`).
+  - Brightens the background color (using your project's primary color).
+*/
+.btn-glitter:hover {
+  transform: translateY(-3px);
+  background-color: var(--color-primary-600); /* Brighter hover */
+}
+
+/* The glitter/glow pseudo-element.
+  - It's a large, blurred, conical gradient.
+  - It sits *behind* the button (`z-0`).
+  - `opacity-0` and `scale-150` make it hidden by default.
+  - `transition-all` handles the fade-in/out.
+*/
+.btn-glitter-wrapper::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  top: 50%;
+  left: 50%;
+  width: 200%;
+  height: 200%;
+  
+  /* A multi-color gradient for a "glitter" effect */
+  background-image: conic-gradient(
+    from 0deg at 50% 50%,
+    var(--color-primary-500),
+    #87ceeb, /* Light Blue */
+    #ffffff,
+    #87ceeb,
+    var(--color-primary-500)
+  );
+  
+  transform: translate(-50%, -50%) scale(1.5);
+  filter: blur(20px);
+  opacity: 0;
+  transition: all 0.5s ease-in-out;
+}
+
+/* On hover of the *wrapper*:
+  - The pseudo-element fades in (`opacity-100`).
+  - It starts spinning (`animate-spin`).
+*/
+.btn-glitter-wrapper:hover::before {
+  opacity: 1;
+  animation: spin 3s linear infinite;
+}

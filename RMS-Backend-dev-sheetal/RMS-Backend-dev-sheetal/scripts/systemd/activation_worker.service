@@ -1,0 +1,16 @@
+[Unit]
+Description=RMS Activation Worker
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/path/to/your/repo
+Environment=PYTHONPATH=/path/to/your/repo
+Environment=INTERNAL_SERVICE_TOKEN=your-token-here
+ExecStart=/path/to/venv/bin/python -m scripts.activation_worker
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

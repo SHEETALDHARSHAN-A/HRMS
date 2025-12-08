@@ -1,0 +1,119 @@
+{
+  "name": "candidate_application_successful",
+  "nodes": [
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "tableName": {
+          "__rl": true,
+          "value": "profiles",
+          "mode": "list",
+          "cachedResultName": "profiles"
+        },
+        "additionalFields": {},
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "632c78d6-c583-4ebb-8b11-d97c58769039",
+      "name": "Postgres Trigger",
+      "credentials": {
+        "postgres": {
+          "id": "R9RdjKg9M3WsYy78",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "tis-ai@thapovan-inc.com",
+        "toEmail": "={{ $json.email }}",
+        "subject": "=Application Received - {{ $json.job_title }} at Smart HR Agent",
+        "html": "=<!DOCTYPE html>\n<html>\n<head>\n    <meta charset=\"UTF-8\">\n</head>\n<body style=\"font-family: Arial, sans-serif; color: #333;\">\n    <div style=\"max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;\">\n        <h2 style=\"color: #10b981;\">✓ Application Received</h2>\n        \n        <p>Dear <strong>{{ $json.name }}</strong>,</p>\n        \n        <p>Thank you for applying to the position of <strong>{{ $json.job_title }}</strong> at Smart HR Agent.</p>\n        \n        <p>We have successfully received your application and our recruitment team is currently reviewing all submissions.</p>\n        \n        <div style=\"background-color: #f0fdf4; padding: 15px; border-radius: 5px; border: 1px solid #c8e6c9; margin: 20px 0;\">\n            <p style=\"margin: 5px 0 0 0;\"><strong>Position:</strong>{{ $json.job_title }}</p>\n            <p style=\"margin: 5px 0 0 0;\"><strong>Submitted on:</strong> {{ $now.format('DD-MM-YYYY') }}</p>\n        </div>\n        \n        <p>If your qualifications match our requirements, we will contact you within <strong>5-7 business days</strong> to schedule an interview.</p>\n        \n        <p>In the meantime, feel free to explore more opportunities on our careers page or connect with us on our social channels.</p>\n        \n        <p>We appreciate your interest in joining our team!</p>\n        \n        <hr style=\"border: none; border-top: 1px solid #ccc; margin: 24px 0;\">\n        \n        <p style=\"font-size: 14px; color: #777;\">This is an automated notification. Please do not reply to this email.</p>\n        \n        <p>Best regards,</p>\n        <p><strong>The RMS Management Team</strong></p>\n    </div>\n</body>\n</html>\n",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        416,
+        0
+      ],
+      "id": "980a9ee9-b9f8-4a76-a314-a57bca3b0aed",
+      "name": "Send email",
+      "webhookId": "d3a6d628-e6af-4bb2-aecf-d66acd0c3eef",
+      "credentials": {
+        "smtp": {
+          "id": "Ggxf4EXMdLTRfyEB",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    p.*,\n    jd.job_title\nFROM profiles p\nINNER JOIN job_details jd ON p.job_id = jd.id\nWHERE p.id = '{{ $json.payload.id }}'\nLIMIT 1\n\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "72249608-870c-4a62-aa23-d67202f170c8",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "R9RdjKg9M3WsYy78",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Postgres Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ac976052-205e-4f5f-94e2-d27d404a2558",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b2603973a55098297484548dc58a4edf0498230d5b94836f25a830c46e22cd33"
+  },
+  "id": "1oAqRaJekcfZeQjO",
+  "tags": []
+}
