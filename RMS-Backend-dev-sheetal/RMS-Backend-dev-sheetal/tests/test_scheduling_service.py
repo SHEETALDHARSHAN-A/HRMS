@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 
 from app.services.scheduling_service.scheduling_service import Scheduling
 from app.schemas.scheduling_interview_request import SchedulingInterviewRequest
+from app.schemas.scheduling_interview_request import RescheduleInterviewRequest
 import app.services.scheduling_service.scheduling_service as service_mod
 
 
@@ -91,3 +92,75 @@ async def test_schedule_candidate_success(monkeypatch):
     assert create_batch_mock.await_count == 1
     schedules_payload = create_batch_mock.call_args.args[1]
     assert schedules_payload[0]['round_id'] == 'resolved-round-id'
+
+
+@pytest.mark.asyncio
+async def test_reschedule_candidate_not_found(monkeypatch):
+    db = SimpleNamespace()
+    s = Scheduling(db=db)
+
+    monkeypatch.setattr(service_mod, 'get_schedule_context_by_token', AsyncMock(return_value=None))
+
+    future_dt = datetime.now(timezone.utc) + timedelta(days=1)
+    req = RescheduleInterviewRequest(
+        interview_token='00000000-0000-0000-0000-000000000010',
+        interview_date=future_dt.date(),
+        interview_time=time(10, 0),
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await s.reschedule_candidate(req)
+    assert excinfo.value.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_reschedule_candidate_success(monkeypatch):
+    db = SimpleNamespace()
+    s = Scheduling(db=db)
+
+    existing_dt = datetime.now(timezone.utc) + timedelta(days=1)
+    monkeypatch.setattr(
+        service_mod,
+        'get_schedule_context_by_token',
+        AsyncMock(
+            return_value={
+                'profile_id': 'p1',
+                'job_id': 'j1',
+                'round_id': 'r1',
+                'scheduled_datetime': existing_dt,
+                'candidate_name': 'Test Candidate',
+                'candidate_email': 'candidate@example.com',
+                'job_title': 'Engineer',
+                'round_name': 'Round 1',
+                'interview_type': 'agent_interview',
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        service_mod,
+        'reschedule_interview_by_token',
+        AsyncMock(
+            return_value={
+                'profile_id': 'p1',
+                'job_id': 'j1',
+                'round_id': 'r1',
+                'status': 'rescheduled',
+                'rescheduled_count': 2,
+                'scheduled_datetime': existing_dt + timedelta(days=1),
+            }
+        ),
+    )
+    monkeypatch.setattr(service_mod, 'send_interview_invite_email_async', AsyncMock(return_value=True))
+
+    future_dt = datetime.now(timezone.utc) + timedelta(days=2)
+    req = RescheduleInterviewRequest(
+        interview_token='00000000-0000-0000-0000-000000000020',
+        interview_date=future_dt.date(),
+        interview_time=time(11, 0),
+        reason='Interviewer unavailable',
+    )
+
+    res = await s.reschedule_candidate(req)
+    assert res['status_code'] == status.HTTP_200_OK
+    assert res['data']['status'] == 'rescheduled'
+    assert res['data']['rescheduled_count'] == 2

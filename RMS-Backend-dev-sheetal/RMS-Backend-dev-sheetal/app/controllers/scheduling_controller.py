@@ -7,10 +7,9 @@ from fastapi import Request, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.repository.scheduling_repository import get_scheduled_interviews
 from app.schemas.scheduling_interview_request import SchedulingInterviewRequest
+from app.schemas.scheduling_interview_request import RescheduleInterviewRequest
 from app.services.scheduling_service.scheduling_service import Scheduling
 from app.utils.standard_response_utils import ResponseBuilder
-from app.services.scheduling_service.scheduling_service import Scheduling
-from app.schemas.scheduling_interview_request import SchedulingInterviewRequest
 
 logger = logging.getLogger(__name__)
 
@@ -91,3 +90,36 @@ async def get_scheduled_interviews_controller(
             f"An unexpected error occurred while fetching scheduled interviews: {e}",
             
         ) 
+
+
+async def reschedule_interview_controller(
+    request: Request,
+    reschedule_request: RescheduleInterviewRequest,
+    db: AsyncSession,
+) -> Dict[str, Any]:
+    """Handles interview rescheduling requests."""
+    try:
+        service = Scheduling(db=db)
+        try:
+            raw = await request.json()
+            if isinstance(raw, dict):
+                if raw.get("custom_subject") and not getattr(reschedule_request, "email_subject", None):
+                    reschedule_request.email_subject = raw.get("custom_subject")
+                if raw.get("custom_body") and not getattr(reschedule_request, "email_body", None):
+                    reschedule_request.email_body = raw.get("custom_body")
+        except Exception:
+            logger.debug("Could not read raw request JSON to map custom template keys for reschedule.")
+
+        return await service.reschedule_candidate(reschedule_request)
+
+    except HTTPException as e:
+        return ResponseBuilder.error(
+            e.detail,
+            [e.detail],
+            status_code=e.status_code,
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in reschedule_interview_controller: {e}", exc_info=True)
+        return ResponseBuilder.server_error(
+            f"An unexpected error occurred during rescheduling: {e}",
+        )

@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
 from sqlalchemy import cast, String
 
@@ -72,17 +72,44 @@ class InterviewAuthService:
                 detail="Interview token or email is incorrect.",
             )
 
-        if schedule.status.lower() == "completed":
+        schedule_status = str(getattr(schedule, "status", "") or "").lower()
+        if schedule_status == "completed":
             raise HTTPException(
                 status_code=status.HTTP_410_GONE,
                 detail="This interview has already been completed.",
             )
-            
-        if schedule.status.lower() != "scheduled":
+
+        if schedule_status != "scheduled":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Interview status is '{schedule.status}'. Cannot proceed.",
             )
+
+        interview_type = str(getattr(schedule, "interview_type", "Agent_interview") or "Agent_interview").lower()
+        if any(tag in interview_type for tag in ("coding", "apti", "aptitude", "mcq", "assessment")):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This round is an assessment round. Please use the coding/aptitude assessment flow.",
+            )
+
+        if any(tag in interview_type for tag in ("in_person", "in-person", "offline")):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This is an in-person interview round. Please check the meeting room details with your coordinator.",
+            )
+
+        scheduled_at = getattr(schedule, "scheduled_datetime", None)
+        if scheduled_at is not None:
+            if getattr(scheduled_at, "tzinfo", None) is None:
+                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+
+            join_window_open = scheduled_at - timedelta(minutes=5)
+            now_utc = datetime.now(timezone.utc)
+            if now_utc < join_window_open:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Interview room access opens 5 minutes before the scheduled start time.",
+                )
 
         # Generate and send OTP
         try:

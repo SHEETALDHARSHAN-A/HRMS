@@ -3,6 +3,7 @@
 import uuid
 import logging
 import asyncio
+import json
 
 from fastapi import HTTPException, status
 from typing import Dict, Any, List, Optional, Union
@@ -15,6 +16,7 @@ from app.utils.email_utils import send_interview_invite_email_async
 from app.services.config_service.email_template_service import EmailTemplateService
 import re
 from app.schemas.scheduling_interview_request import SchedulingInterviewRequest
+from app.schemas.scheduling_interview_request import RescheduleInterviewRequest
 from app.db.repository.scheduling_repository import (
     get_candidate_details_for_scheduling,
     check_existing_schedules,
@@ -22,8 +24,11 @@ from app.db.repository.scheduling_repository import (
     get_round_name_by_id,      # New import
     create_schedules_batch,
     get_job_title_by_id,
-    get_next_round_details
+    get_next_round_details,
+    get_schedule_context_by_token,
+    reschedule_interview_by_token,
 )
+from app.db.redis_manager import RedisManager
 
 logger = logging.getLogger(__name__)
 settings = AppConfig()
@@ -292,4 +297,165 @@ class Scheduling:
                 "profiles_failed_email": emails_failed,
             },
             "status_code": status.HTTP_200_OK
+        }
+
+    async def reschedule_candidate(self, request: RescheduleInterviewRequest):
+        """Reschedule an already scheduled interview by interview token."""
+        schedule_context = await get_schedule_context_by_token(self.db, request.interview_token)
+        if not schedule_context:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Interview schedule not found for the provided token.",
+            )
+
+        try:
+            combined_datetime = datetime.combine(request.interview_date, request.interview_time)
+            localized_datetime = combined_datetime.replace(tzinfo=LOCAL_TIMEZONE)
+            interview_datetime_utc = localized_datetime.astimezone(timezone.utc)
+
+            if interview_datetime_utc < datetime.now(timezone.utc):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Invalid date: scheduled interview datetime cannot be in the past.",
+                )
+            if (interview_datetime_utc - datetime.now(timezone.utc)).days > 60:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Invalid date: scheduled interview datetime cannot be more than 2 months in the future.",
+                )
+            if request.interview_time < time(9, 0) or request.interview_time > time(18, 0):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Invalid date or time: Interviews can only be scheduled between 09:00 and 18:00 UTC.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid date or time format provided. Please use YYYY-MM-DD and HH:MM:SS format.",
+            )
+
+        updated_schedule = await reschedule_interview_by_token(
+            self.db,
+            request.interview_token,
+            interview_datetime_utc,
+        )
+        if not updated_schedule:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Interview schedule not found while applying reschedule.",
+            )
+
+        candidate_name = (schedule_context.get("candidate_name") or "Candidate").strip() or "Candidate"
+        candidate_email = (schedule_context.get("candidate_email") or "").strip()
+        job_title = schedule_context.get("job_title") or "Job Interview"
+        round_name = schedule_context.get("round_name") or "Interview Round"
+        interview_type = str(schedule_context.get("interview_type") or "agent_interview").strip().lower()
+
+        base_url = str(self.INTERVIEW_LINK_BASE or "").rstrip("/")
+        interview_link = (
+            f"{base_url}/interview/join?token={request.interview_token}"
+            if base_url
+            else f"/interview/join?token={request.interview_token}"
+        )
+
+        # For coding/apti rounds keep assessment end-time in sync with the new start time.
+        assessment_end_utc = None
+        if interview_type in {"coding_assessment", "apti_assessment"}:
+            duration_minutes = 60
+            policy_key = f"interview_runtime_policy:{request.interview_token}"
+            try:
+                redis_client = await RedisManager.get_client()
+                existing_policy_raw = await redis_client.get(policy_key)
+                if existing_policy_raw:
+                    existing_policy = json.loads(existing_policy_raw)
+                    duration_minutes = int(existing_policy.get("durationMinutes") or 60)
+                    secure_required = bool(existing_policy.get("secureBrowserRequired", True))
+                    proctor_required = bool(existing_policy.get("proctoringRequired", True))
+                else:
+                    secure_required = True
+                    proctor_required = True
+
+                assessment_end_utc = interview_datetime_utc + timedelta(minutes=duration_minutes)
+                refreshed_policy = {
+                    "mode": interview_type,
+                    "startAt": interview_datetime_utc.isoformat(),
+                    "endAt": assessment_end_utc.isoformat(),
+                    "durationMinutes": duration_minutes,
+                    "secureBrowserRequired": secure_required,
+                    "proctoringRequired": proctor_required,
+                    "allowTabSwitch": False,
+                }
+                await redis_client.setex(policy_key, 12 * 60 * 60, json.dumps(refreshed_policy))
+            except Exception as redis_err:
+                logger.warning("Could not refresh runtime policy on reschedule: %s", redis_err)
+                assessment_end_utc = interview_datetime_utc + timedelta(minutes=duration_minutes)
+
+        # Build rendered email content.
+        rendered_subject = request.email_subject
+        rendered_body = request.email_body
+        if not rendered_subject:
+            rendered_subject = f"Interview Rescheduled - {job_title} at Smart HR Agent"
+
+        if not rendered_body:
+            reason_html = (
+                f"<p><strong>Reason:</strong> {request.reason}</p>"
+                if request.reason
+                else ""
+            )
+            timing_line = (
+                f"Assessment window ends at {assessment_end_utc.astimezone(LOCAL_TIMEZONE).strftime('%d-%m-%Y %I:%M %p')}"
+                if assessment_end_utc
+                else f"Please join at {localized_datetime.strftime('%d-%m-%Y %I:%M %p')}"
+            )
+            rendered_body = (
+                f"<p>Dear {candidate_name},</p>"
+                f"<p>Your {round_name} for {job_title} has been rescheduled.</p>"
+                f"<p>{timing_line}</p>"
+                f"{reason_html}"
+                f"<p>Join link: <a href=\"{interview_link}\">Join Interview</a></p>"
+            )
+
+        email_sent = False
+        if candidate_email:
+            try:
+                validate_input_email(candidate_email)
+                email_sent = await send_interview_invite_email_async(
+                    to_email=candidate_email,
+                    custom_subject=rendered_subject,
+                    custom_body=rendered_body,
+                    candidate_name=candidate_name,
+                    interview_link=interview_link,
+                    interview_token=request.interview_token,
+                    interview_datetime=interview_datetime_utc,
+                    job_title=job_title,
+                    round_name=round_name,
+                )
+            except Exception as email_err:
+                logger.warning("Reschedule email could not be sent: %s", email_err)
+
+        return {
+            "message": "Interview rescheduled successfully.",
+            "data": {
+                "interview_token": str(request.interview_token),
+                "job_id": updated_schedule.get("job_id"),
+                "profile_id": updated_schedule.get("profile_id"),
+                "round_id": updated_schedule.get("round_id"),
+                "status": updated_schedule.get("status"),
+                "rescheduled_count": updated_schedule.get("rescheduled_count"),
+                "previous_scheduled_datetime": (
+                    schedule_context.get("scheduled_datetime").isoformat()
+                    if schedule_context.get("scheduled_datetime")
+                    else None
+                ),
+                "scheduled_datetime": (
+                    updated_schedule.get("scheduled_datetime").isoformat()
+                    if updated_schedule.get("scheduled_datetime")
+                    else None
+                ),
+                "assessment_end_datetime": assessment_end_utc.isoformat() if assessment_end_utc else None,
+                "email_sent": email_sent,
+            },
+            "status_code": status.HTTP_200_OK,
         }

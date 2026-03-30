@@ -6,6 +6,7 @@ from datetime import date, time
 
 from app.controllers import scheduling_controller as ctrl
 from app.schemas.scheduling_interview_request import SchedulingInterviewRequest
+from app.schemas.scheduling_interview_request import RescheduleInterviewRequest
 from app.services.scheduling_service.scheduling_service import Scheduling
 
 
@@ -85,3 +86,45 @@ async def test_get_scheduled_interviews_controller_error(monkeypatch, fake_db):
     resp = await ctrl.get_scheduled_interviews_controller("jid", "rid", fake_db)
     assert resp['success'] is False
     assert resp['status_code'] == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
+@pytest.mark.asyncio
+async def test_reschedule_interview_controller_success(monkeypatch, fake_db):
+    req_payload = {
+        'custom_subject': 'Rescheduled',
+        'custom_body': '<p>Updated</p>'
+    }
+    fake_request = FakeRequest(req_payload)
+
+    reschedule_request = RescheduleInterviewRequest(
+        interview_token='00000000-0000-0000-0000-000000000031',
+        interview_date=date.today(),
+        interview_time=time(10, 0),
+    )
+
+    ret = {"message": "Interview rescheduled successfully.", "data": {"status": "rescheduled"}, "status_code": status.HTTP_200_OK}
+    mock_reschedule = AsyncMock(return_value=ret)
+    monkeypatch.setattr(Scheduling, 'reschedule_candidate', mock_reschedule)
+
+    resp = await ctrl.reschedule_interview_controller(fake_request, reschedule_request, fake_db)
+    assert resp['status_code'] == status.HTTP_200_OK
+    assert resp['data']['status'] == 'rescheduled'
+    called_req = mock_reschedule.call_args[0][0]
+    assert called_req.email_subject == req_payload['custom_subject']
+
+
+@pytest.mark.asyncio
+async def test_reschedule_interview_controller_http_exception(monkeypatch, fake_db):
+    reschedule_request = RescheduleInterviewRequest(
+        interview_token='00000000-0000-0000-0000-000000000032',
+        interview_date=date.today(),
+        interview_time=time(10, 0),
+    )
+
+    exc = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not found")
+    mock_reschedule = AsyncMock(side_effect=exc)
+    monkeypatch.setattr(Scheduling, 'reschedule_candidate', mock_reschedule)
+
+    resp = await ctrl.reschedule_interview_controller(FakeRequest(), reschedule_request, fake_db)
+    assert resp['success'] is False
+    assert resp['status_code'] == status.HTTP_404_NOT_FOUND

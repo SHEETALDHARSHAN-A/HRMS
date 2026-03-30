@@ -101,6 +101,27 @@ class InterviewCompletionService:
 				decision=decision,
 			)
 
+			auto_schedule = {
+				"triggered": False,
+				"reason": "not_shortlisted",
+			}
+			if decision == "shortlist" and bool(next_round.get("triggered")):
+				try:
+					from app.services.scheduling_service.next_round_auto_scheduler import NextRoundAutoScheduler
+
+					auto_schedule = await NextRoundAutoScheduler(self.db).auto_schedule_next_round(
+						profile_id=schedule.profile_id,
+						current_round_id=current_round.id,
+						source="interview_completion",
+					)
+				except Exception as auto_exc:
+					logger.warning("Auto scheduling failed during interview completion: %s", auto_exc, exc_info=True)
+					auto_schedule = {
+						"triggered": False,
+						"reason": "auto_schedule_failed",
+						"error": str(auto_exc),
+					}
+
 			await self._mark_schedule_completed(schedule)
 
 			await self._attach_evaluation_to_transcript(
@@ -127,6 +148,7 @@ class InterviewCompletionService:
 					"order": current_round.round_order,
 				},
 				"nextRound": next_round,
+				"autoSchedule": auto_schedule,
 				"transcriptId": str(transcript.id) if transcript else None,
 				"codingSubmissionId": str(coding_submission.id) if coding_submission else None,
 			}

@@ -3,6 +3,7 @@
 import re
 import logging
 import inspect
+from datetime import datetime, timezone
 
 from uuid import UUID
 from typing import List, Dict, Any
@@ -321,6 +322,106 @@ async def get_next_round_details(db: AsyncSession, job_id: str, current_round_id
         return {"round_name": next_round_name}
     
     return None # No next round found
+
+
+async def get_schedule_context_by_token(
+    db: AsyncSession,
+    interview_token: str,
+) -> Optional[Dict[str, Any]]:
+    """Fetch schedule + candidate metadata by interview token."""
+    try:
+        token_uuid = UUID(str(interview_token))
+    except ValueError:
+        return None
+
+    stmt = (
+        select(
+            Scheduling.profile_id.label("profile_id"),
+            Scheduling.job_id.label("job_id"),
+            Scheduling.round_id.label("round_id"),
+            Scheduling.interview_token.label("interview_token"),
+            Scheduling.interview_type.label("interview_type"),
+            Scheduling.level_of_interview.label("level_of_interview"),
+            Scheduling.rescheduled_count.label("rescheduled_count"),
+            Scheduling.scheduled_datetime.label("scheduled_datetime"),
+            Profile.name.label("candidate_name"),
+            Profile.email.label("candidate_email"),
+            JobDetails.job_title.label("job_title"),
+            RoundList.round_name.label("round_name"),
+        )
+        .select_from(Scheduling)
+        .join(Profile, Scheduling.profile_id == Profile.id)
+        .join(JobDetails, Scheduling.job_id == JobDetails.id)
+        .join(InterviewRounds, Scheduling.round_id == InterviewRounds.id, isouter=True)
+        .join(
+            RoundList,
+            or_(
+                RoundList.id == Scheduling.round_id,
+                RoundList.id == InterviewRounds.round_id,
+            ),
+            isouter=True,
+        )
+        .where(Scheduling.interview_token == token_uuid)
+        .limit(1)
+    )
+
+    row = (await db.execute(stmt)).fetchone()
+    if row is None:
+        return None
+
+    return {
+        "profile_id": str(row.profile_id),
+        "job_id": str(row.job_id),
+        "round_id": str(row.round_id),
+        "interview_token": str(row.interview_token),
+        "interview_type": row.interview_type,
+        "level_of_interview": row.level_of_interview,
+        "rescheduled_count": row.rescheduled_count,
+        "scheduled_datetime": row.scheduled_datetime,
+        "candidate_name": row.candidate_name,
+        "candidate_email": row.candidate_email,
+        "job_title": row.job_title,
+        "round_name": row.round_name,
+    }
+
+
+async def reschedule_interview_by_token(
+    db: AsyncSession,
+    interview_token: str,
+    scheduled_datetime: datetime,
+) -> Optional[Dict[str, Any]]:
+    """Update scheduled datetime/status by interview token."""
+    try:
+        token_uuid = UUID(str(interview_token))
+    except ValueError:
+        return None
+
+    stmt = select(Scheduling).where(Scheduling.interview_token == token_uuid)
+    schedule = (await db.execute(stmt)).scalars().first()
+    if schedule is None:
+        return None
+
+    schedule.scheduled_datetime = scheduled_datetime
+    schedule.status = "rescheduled"
+    schedule.rescheduled_count = int(schedule.rescheduled_count or 0) + 1
+    schedule.updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    try:
+        await db.refresh(schedule)
+    except Exception:
+        # Some mocked DB implementations used by tests may not support refresh.
+        pass
+
+    return {
+        "profile_id": str(schedule.profile_id),
+        "job_id": str(schedule.job_id),
+        "round_id": str(schedule.round_id),
+        "interview_token": str(schedule.interview_token),
+        "status": schedule.status,
+        "rescheduled_count": schedule.rescheduled_count,
+        "scheduled_datetime": schedule.scheduled_datetime,
+    }
 
 async def get_scheduled_interviews(job_id: str, round_id: str, db: AsyncSession) -> List[Dict[str, Any]]:
     try:

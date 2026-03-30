@@ -13,6 +13,7 @@ from app.db.repository.shortlist_repository import (
     upsert_shortlist_result,
     update_interview_round_status
 )
+from app.services.scheduling_service.next_round_auto_scheduler import NextRoundAutoScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +93,31 @@ class ShortlistService:
                     detail="No such profile or round found in database."
                 )
 
+            auto_schedule_result = {
+                "triggered": False,
+                "reason": "not_shortlisted",
+            }
+            if new_round_status == "shortlisted":
+                try:
+                    auto_schedule_result = await NextRoundAutoScheduler(self.db_session).auto_schedule_next_round(
+                        profile_id=profile_id,
+                        current_round_id=round_id,
+                        source="shortlist_update",
+                    )
+                    await self.db_session.commit()
+                except Exception as auto_exc:
+                    logger.warning(
+                        "[ShortlistService] Auto-schedule failed for profile=%s round=%s: %s",
+                        profile_id,
+                        round_id,
+                        auto_exc,
+                    )
+                    auto_schedule_result = {
+                        "triggered": False,
+                        "reason": "auto_schedule_failed",
+                        "error": str(auto_exc),
+                    }
+
             return {
                 "shortlist_id": str(updated_entry.id),
                 "profile_id": str(updated_entry.profile_id),
@@ -100,6 +126,7 @@ class ShortlistService:
                 "new_round_status": new_round_status,
                 "reason": updated_entry.reason,
                 "updated_at": updated_entry.updated_at.isoformat(),
+                "auto_schedule": auto_schedule_result,
             }
 
         except ValueError as ve:

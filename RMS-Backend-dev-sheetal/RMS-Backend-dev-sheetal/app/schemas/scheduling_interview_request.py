@@ -23,3 +23,15 @@ class SchedulingInterviewRequest(BaseModel):
  
     class Config:
         from_attributes = True
+
+
+class RescheduleInterviewRequest(BaseModel):
+    interview_token: str = Field(..., description="Interview token for the existing schedule.")
+    interview_date: date = Field(..., description="New interview date (YYYY-MM-DD)")
+    interview_time: time = Field(..., description="New interview time (HH:MM:SS)")
+    reason: str | None = Field(None, description="Optional reason for rescheduling.")
+    email_subject: str | None = Field(None, description="Optional custom email subject.")
+    email_body: str | None = Field(None, description="Optional custom email body.")
+
+    class Config:
+        from_attributes = True

@@ -2,10 +2,12 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
 from app.db.connection_manager import get_db # Need this import to resolve dependency
 from app.schemas.scheduling_interview_request import SchedulingInterviewRequest
+from app.schemas.scheduling_interview_request import RescheduleInterviewRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.controllers.scheduling_controller import (
     scheduling_interview_controller,
-    get_scheduled_interviews_controller
+    get_scheduled_interviews_controller,
+    reschedule_interview_controller,
 )
 from app.utils.standard_response_utils import ResponseBuilder
 from app.schemas.standard_response import StandardResponse
@@ -52,6 +54,31 @@ async def get_scheduled_interviews_route(
         job_id=job_id,
         round_id=round_id,
         db=db
+    )
+    return JSONResponse(content=result, status_code=result.get("status_code"))
+
+
+@router.post(
+    "/reschedule-interview",
+    summary="Reschedule an existing interview",
+    response_model=StandardResponse,
+    description="""
+    Reschedule an already scheduled interview using its interview token.
+    - Accepts interview token, new date and time.
+    - Increments reschedule count and updates schedule status.
+    - Sends updated invitation email to candidate.
+    """,
+)
+async def reschedule_interview_route(
+    request: Request,
+    reschedule_request: RescheduleInterviewRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Handles interview reschedule requests."""
+    result = await reschedule_interview_controller(
+        request=request,
+        reschedule_request=reschedule_request,
+        db=db,
     )
     return JSONResponse(content=result, status_code=result.get("status_code"))
 

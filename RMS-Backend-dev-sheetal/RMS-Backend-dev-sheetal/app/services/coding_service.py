@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException, status
@@ -88,6 +89,7 @@ class CodingService:
     async def submit_solution(self, request: CodingSubmitRequest) -> Dict[str, Any]:
         email = str(request.email)
         context = await self._resolve_candidate_context(token=request.token, email=email)
+        security_validation = self._enforce_submission_security(request=request, context=context)
 
         stored_payload = await self._load_assessment_payload(token=request.token, email=email)
         question_payload = stored_payload or request.question
@@ -181,6 +183,7 @@ class CodingService:
             "language": submission.language,
             "status": submission.status,
             "question": submission.question_payload,
+            "securityValidation": security_validation,
         }
 
     async def get_submission(self, submission_id: str, token: str, email: str) -> Dict[str, Any]:
@@ -273,6 +276,8 @@ class CodingService:
             )
 
         challenge_type = self._detect_challenge_type(config)
+        self._validate_schedule_window(schedule=schedule, challenge_type=challenge_type)
+        runtime_policy = await self._load_runtime_policy(token=token)
 
         return {
             "schedule": schedule,
@@ -282,7 +287,103 @@ class CodingService:
             "job_id": schedule.job_id,
             "round_list_id": round_list_id,
             "challenge_type": challenge_type,
+            "runtime_policy": runtime_policy,
         }
+
+    def _validate_schedule_window(self, schedule: Scheduling, challenge_type: str) -> None:
+        scheduled_at = getattr(schedule, "scheduled_datetime", None)
+        expires_at = getattr(schedule, "expired_at", None)
+        now_utc = datetime.now(timezone.utc)
+
+        if scheduled_at is not None:
+            if getattr(scheduled_at, "tzinfo", None) is None:
+                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+            if now_utc < scheduled_at:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Assessment has not started yet. Please join at the scheduled start time.",
+                )
+
+        if expires_at is not None:
+            if getattr(expires_at, "tzinfo", None) is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if now_utc > expires_at:
+                raise HTTPException(
+                    status_code=status.HTTP_410_GONE,
+                    detail="Assessment window has ended. Please contact the recruiter for rescheduling.",
+                )
+
+    def _enforce_submission_security(self, request: CodingSubmitRequest, context: Dict[str, Any]) -> Dict[str, Any]:
+        policy = context.get("runtime_policy") if isinstance(context.get("runtime_policy"), dict) else {}
+        secure_required = bool(policy.get("secureBrowserRequired", False))
+        proctor_required = bool(policy.get("proctoringRequired", False))
+
+        if not secure_required and not proctor_required:
+            return {
+                "required": False,
+                "validated": False,
+                "reason": "runtime_policy_not_enforced",
+            }
+
+        secure_meta = request.secureBrowserMeta or {}
+        proctor_signals = request.proctoringSignals or {}
+
+        if secure_required and not bool(secure_meta.get("isSecureBrowser", False)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Secure browser mode is required for this assessment round.",
+            )
+
+        if proctor_required:
+            if not isinstance(proctor_signals, dict) or not proctor_signals:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Proctoring telemetry is required for this assessment round.",
+                )
+
+            head_alerts = proctor_signals.get("headMovementAlerts")
+            eye_alerts = proctor_signals.get("eyeAwayAlerts")
+            if head_alerts is not None:
+                try:
+                    if int(head_alerts) > 20:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Head-movement risk threshold exceeded during assessment.",
+                        )
+                except HTTPException:
+                    raise
+                except Exception:
+                    pass
+
+            if eye_alerts is not None:
+                try:
+                    if int(eye_alerts) > 20:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Eye-focus risk threshold exceeded during assessment.",
+                        )
+                except HTTPException:
+                    raise
+                except Exception:
+                    pass
+
+        return {
+            "required": True,
+            "validated": True,
+            "secureBrowserRequired": secure_required,
+            "proctoringRequired": proctor_required,
+        }
+
+    async def _load_runtime_policy(self, token: str) -> Dict[str, Any]:
+        try:
+            redis_client = RedisManager.get_client()
+            raw = await redis_client.get(f"interview_runtime_policy:{str(token).strip()}")
+            if not raw:
+                return {}
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
 
     async def _resolve_round_list_id(self, schedule: Scheduling) -> Optional[Any]:
         stmt = select(InterviewRounds).where(InterviewRounds.id == schedule.round_id)

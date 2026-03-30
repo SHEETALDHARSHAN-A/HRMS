@@ -17,6 +17,14 @@ class CodingSubmitRequest(BaseModel):
     code: Optional[str] = Field(default=None, min_length=1, max_length=50000)
     mcqAnswers: List[McqAnswerItem] = Field(default_factory=list)
     question: Optional[Dict[str, Any]] = Field(default=None)
+    secureBrowserMeta: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional secure-browser metadata (for proctored rounds).",
+    )
+    proctoringSignals: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional client-side proctoring telemetry (head/eye/tab signals).",
+    )
 
 
 class CodingSubmissionLookupRequest(BaseModel):
