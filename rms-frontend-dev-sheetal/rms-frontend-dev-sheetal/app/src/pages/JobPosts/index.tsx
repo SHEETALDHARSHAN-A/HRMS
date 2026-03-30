@@ -51,11 +51,6 @@ export default function JobPostsPage() {
 
   const isFormView = viewMode === 'create' || viewMode === 'edit';
 
-  // Update banner title based on the list view
-  const listTitle = activeTab === 'my_jobs' ? "My Job Posts" : "All Job Posts";
-
- 
-
   return (
     <Layout
       bannerTitle={viewMode === 'list' ? "Job Posts Management" : viewMode === 'create' ? "Job Post Creating Form" : "Job Post Editing Form"}

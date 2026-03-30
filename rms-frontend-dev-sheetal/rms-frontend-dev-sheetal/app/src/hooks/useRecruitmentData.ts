@@ -1,5 +1,5 @@
 // src/hooks/useRecruitmentData.ts
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '../context/ModalContext';
 import { getJobRoundOverview, getCandidatesForRound } from '../api/recruitmentApi';
 import type { JobWithRounds, Candidate, RoundOverview } from '../api/recruitmentApi';

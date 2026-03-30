@@ -5,7 +5,7 @@ import {
   RoomAudioRenderer,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { Loader2 } from "lucide-react";
+import { Code2, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ErrorBoundary from "../common/ErrorBoundary";
@@ -13,17 +13,37 @@ import ErrorBoundary from "../common/ErrorBoundary";
 interface InterviewRoomProps {
   token: string;
   serverUrl: string;
+  interviewToken?: string;
+  candidateEmail?: string;
 }
 
 export const InterviewRoom: React.FC<InterviewRoomProps> = ({
   token,
   serverUrl,
+  interviewToken,
+  candidateEmail,
 }) => {
   const [isConnected, setIsConnected] = useState(false);
   const navigate = useNavigate();
 
+  const openCodingWorkspace = () => {
+    if (!interviewToken || !candidateEmail) return;
+    const target = `/interview/coding?token=${encodeURIComponent(interviewToken)}&email=${encodeURIComponent(candidateEmail)}`;
+    window.open(target, "_blank", "noopener,noreferrer");
+  };
+
   return (
-    <div style={{ height: "100vh", width: "100vw", backgroundColor: "#111" }}>
+    <div style={{ height: "100vh", width: "100vw", backgroundColor: "#111", position: "relative" }}>
+  {interviewToken && candidateEmail && (
+        <button
+          type="button"
+          onClick={openCodingWorkspace}
+          className="absolute right-4 top-4 z-[70] inline-flex items-center gap-2 rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-medium text-blue-700 shadow-sm hover:bg-blue-50"
+        >
+          <Code2 className="h-4 w-4" />
+          Open Assessment
+        </button>
+      )}
   <ErrorBoundary>
   <LiveKitRoom
         video={true}

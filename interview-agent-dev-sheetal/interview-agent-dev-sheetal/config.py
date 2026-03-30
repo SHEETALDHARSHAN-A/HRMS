@@ -16,11 +16,21 @@ class Settings(BaseSettings):
     LIVEKIT_API_KEY: str
     LIVEKIT_API_SECRET: str
     
-    # AI Services (Required for Agent Plugins)
-    OPENAI_API_KEY: str
+    # AI Services (Groq-first for LLM)
+    GROQ_API_KEY: str = Field(default="")
+    GROQ_MODEL: str = Field(default="llama-3.3-70b-versatile")
+    OPENAI_API_KEY: str = Field(default="")  # legacy fallback when key is provided via old env name
     CARTESIA_API_KEY: str
     DEEPGRAM_API_KEY: str
     ELEVEN_LABS_API_KEY: str
+
+    @property
+    def ACTIVE_GROQ_API_KEY(self) -> str:
+        key = (self.GROQ_API_KEY or "").strip()
+        if key:
+            return key
+        legacy_key = (self.OPENAI_API_KEY or "").strip()
+        return legacy_key if legacy_key.startswith("gsk_") else ""
     
     # Langfuse (Observability)
     LANGFUSE_PUBLIC_KEY: str
@@ -37,6 +47,8 @@ class Settings(BaseSettings):
     
     # Other settings
     LIVEKIT_INFERENCE_TIMEOUT: int = Field(default=120)
+    BACKEND_BASE_URL: str = Field(default="http://localhost:8000/api")
+    INTERNAL_SERVICE_TOKEN: str = Field(default="")
 
     # CRITICAL: Configure Pydantic to read environment variables and look for .env file
     model_config = SettingsConfigDict(

@@ -1,0 +1,56 @@
+[
+  {
+    "id": "cand-001",
+    "name": "Aarav Sharma",
+    "role": "Senior Backend Engineer",
+    "stage": "L2 Technical",
+    "status": "shortlisted",
+    "score": 86,
+    "appliedAt": "2026-03-24"
+  },
+  {
+    "id": "cand-002",
+    "name": "Maya Patel",
+    "role": "Frontend Engineer",
+    "stage": "Screening",
+    "status": "in_review",
+    "score": 74,
+    "appliedAt": "2026-03-22"
+  },
+  {
+    "id": "cand-003",
+    "name": "Rohan Iyer",
+    "role": "Product Analyst",
+    "stage": "Offer",
+    "status": "hired",
+    "score": 91,
+    "appliedAt": "2026-03-20"
+  },
+  {
+    "id": "cand-004",
+    "name": "Nisha Menon",
+    "role": "QA Automation Engineer",
+    "stage": "L1 Technical",
+    "status": "rejected",
+    "score": 58,
+    "appliedAt": "2026-03-18"
+  },
+  {
+    "id": "cand-005",
+    "name": "Kabir Gupta",
+    "role": "DevOps Engineer",
+    "stage": "Managerial",
+    "status": "in_review",
+    "score": 79,
+    "appliedAt": "2026-03-15"
+  },
+  {
+    "id": "cand-006",
+    "name": "Priya Nair",
+    "role": "Data Engineer",
+    "stage": "L3 Panel",
+    "status": "shortlisted",
+    "score": 88,
+    "appliedAt": "2026-03-12"
+  }
+]

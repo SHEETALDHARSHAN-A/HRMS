@@ -1,41 +1,39 @@
-import { useState, useCallback } from "react";
-import { BarChart2 } from "lucide-react";
-import Layout from "../../components/layout/Layout";
-import Dashboard from "./Dashboard";
-import Button from "../../components/common/Button";
-/**
- * This component acts as the page wrapper for the Dashboard feature,
- * applying the main application layout (Sidebar, Header, etc.).
- */
+import type { CSSProperties } from 'react';
+
+import { AppSidebar } from '@/components/app-sidebar';
+import { ChartAreaInteractive } from '@/components/chart-area-interactive';
+import { DataTable, type CandidateTableRow } from '@/components/data-table';
+import { SectionCards } from '@/components/section-cards';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+
+import data from './data.json';
+
+const tableData = data as CandidateTableRow[];
+
 export default function DashboardPage() {
-  const [showTotalsModal, setShowTotalsModal] = useState(false);
-
-  const openTotals = useCallback(() => setShowTotalsModal(true), []);
-  const closeTotals = useCallback(() => setShowTotalsModal(false), []);
-
-  const bannerButton = (
-    <Button
-      onClick={openTotals}
-      variant="ghost"
-      className="rounded-full px-3 py-2 ml-2 flex items-center gap-1 bg-white/90 text-[#0b2447]"
-    >
-      <BarChart2 size={15} />
-      Total Jobs Overview
-    </Button>
-  );
-
   return (
-    <Layout
-      bannerTitle="Dashboard"
-      bannerSubtitle="Welcome to your dashboard"
-      searchPlaceholder="Search dashboard..."
-      bannerActionButton={bannerButton}
+    <SidebarProvider
+      style={
+        {
+          '--sidebar-width': 'calc(var(--spacing) * 72)',
+          '--header-height': 'calc(var(--spacing) * 12)',
+        } as CSSProperties
+      }
     >
-      <Dashboard
-        showTotalsModal={showTotalsModal}
-        onOpenTotals={openTotals}
-        onCloseTotals={closeTotals}
-      />
-    </Layout>
+      <AppSidebar variant="inset" />
+      <SidebarInset>
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+              <SectionCards />
+              <div className="px-4 lg:px-6">
+                <ChartAreaInteractive />
+              </div>
+              <DataTable data={tableData} />
+            </div>
+          </div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

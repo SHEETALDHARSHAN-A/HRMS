@@ -75,10 +75,14 @@ async def upload_job_post_route(
     jd_uploader = Depends(get_job_post_uploader)
 ):
     """Upload a job description file (DOCX/PDF), extract its content."""
-    return await upload_job_post_controller(
+    result = await upload_job_post_controller(
         file=file,
         jd_uploader=jd_uploader
     )
+    if isinstance(result, dict):
+        resp_status = result.get("status_code", status.HTTP_200_OK)
+        return JSONResponse(content=result, status_code=resp_status)
+    return result
  
 # ------------------------------------------------------------------
 # 2. CRUD OPERATIONS (INTERNAL/ADMIN)

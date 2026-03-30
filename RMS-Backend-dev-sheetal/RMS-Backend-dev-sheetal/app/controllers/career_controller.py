@@ -53,6 +53,16 @@ async def handle_verify_and_submit_controller(
             ), 
             status_code=status.HTTP_400_BAD_REQUEST
         )
+
+    if not files:
+        return JSONResponse(
+            content=ResponseBuilder.error(
+                "Resume file is required",
+                ["At least one resume file must be uploaded to submit the application."],
+                status_code=status.HTTP_400_BAD_REQUEST,
+            ),
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
     
     service = CareerApplicationService(cache)
     
@@ -70,24 +80,49 @@ async def handle_verify_and_submit_controller(
         return JSONResponse(content=result, status_code=result.get("status_code", status.HTTP_400_BAD_REQUEST))
     
     # If there are resume files, process them with form data
-    if files:
-        try:
-            from app.controllers.resume_controller import handle_resume_upload
-            # Pass the form data so the upload service can use it for profile creation
-            form_metadata = {
-                "source": "career_application",
-                "applicant_name": f"{application_data.get('first_name', '')} {application_data.get('last_name', '')}".strip(),
-                "applicant_email": email,
-                "applicant_phone": application_data.get('phone', ''),
-            }
-            logger.info(f"[CAREER APP] Constructed form_metadata: {form_metadata}")
-            # Pass the DB session through so resume upload repository calls have a valid session
-            upload_result = await handle_resume_upload(job_id, files, form_metadata, db=db)
-            result["data"]["resume_processing"] = upload_result
-            logger.info("Resume files uploaded and queued for processing: %s", upload_result.get("task_id"))
-        except Exception as e:
-            logger.exception("Failed to process resume files: %s", e)
-            # Don't fail the entire application, just log the error
-            result["data"]["resume_processing"] = {"error": str(e)}
+    try:
+        from app.controllers.resume_controller import handle_resume_upload
+        # Pass the form data so the upload service can use it for profile creation
+        form_metadata = {
+            "source": "career_application",
+            "applicant_name": f"{application_data.get('first_name', '')} {application_data.get('last_name', '')}".strip(),
+            "applicant_email": email,
+            "applicant_phone": application_data.get('phone', ''),
+        }
+        logger.info(f"[CAREER APP] Constructed form_metadata: {form_metadata}")
+        # Pass the DB session through so resume upload repository calls have a valid session
+        upload_result = await handle_resume_upload(job_id, files, form_metadata, db=db)
+        result["data"]["resume_processing"] = upload_result
+
+        upload_status = (upload_result or {}).get("status")
+        task_id = (upload_result or {}).get("task_id")
+        if (upload_status and upload_status != "success") or not task_id:
+            error_message = (upload_result or {}).get("message") or "Resume processing could not be started."
+            logger.error(
+                "Resume upload succeeded partially but queueing failed for job %s, email %s: %s",
+                job_id,
+                email,
+                error_message,
+            )
+            return JSONResponse(
+                content=ResponseBuilder.error(
+                    "Application received, but resume extraction did not start",
+                    [error_message],
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                ),
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info("Resume files uploaded and queued for processing: %s", task_id)
+    except Exception as e:
+        logger.exception("Failed to process resume files: %s", e)
+        return JSONResponse(
+            content=ResponseBuilder.error(
+                "Application received, but resume extraction did not start",
+                [str(e)],
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            ),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
     
     return JSONResponse(content=result, status_code=result.get("status_code", status.HTTP_200_OK))

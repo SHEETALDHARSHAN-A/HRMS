@@ -3,9 +3,9 @@ import type { ReactNode } from 'react';
 import Toast from "../components/common/Toast";
 
 interface ToastContextType {
-  showToast: (message: string, type: 'success' | 'error' | 'info') => void;
+  showToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   // Backwards-compatible alias used by some components
-  addToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
+  addToast?: (message: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -13,13 +13,13 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 interface ToastMessage {
   id: string;
   message: string;
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'info' | 'warning';
 }
 
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info') => {
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' | 'warning') => {
     const id = Date.now().toString();
     setToasts((prevToasts) => [...prevToasts, { id, message, type }]);
     setTimeout(() => {
@@ -30,7 +30,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   // expose both `showToast` and an `addToast` alias for backwards compatibility
   const providerValue: ToastContextType = {
     showToast,
-    addToast: (message: string, type: 'success' | 'error' | 'info' = 'info') => showToast(message, type),
+    addToast: (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => showToast(message, type),
   };
 
   return (

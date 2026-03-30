@@ -30,9 +30,7 @@ const CandidateStatusModal: React.FC<CandidateStatusModalProps> = ({
             setStatusToConfirm(null);
         }
     }, [isOpen, candidate.profile_id]);
-    
-    if (!isOpen) return null;
-    
+
     const isShowingConfirmation = statusToConfirm !== null;
     const currentStatus = candidate.round_status;
 
@@ -48,6 +46,8 @@ const CandidateStatusModal: React.FC<CandidateStatusModalProps> = ({
         if (currentStatus === 'under_review') return ['shortlisted', 'rejected'];
         return ['shortlisted', 'under_review', 'rejected'];
     }, [currentStatus]);
+
+    if (!isOpen) return null;
     
     const displayStatuses = allStatuses
         .map(status => {
@@ -63,7 +63,6 @@ const CandidateStatusModal: React.FC<CandidateStatusModalProps> = ({
             'shortlisted': 'Confirm Move to Next Round',
             'under_review': 'Confirm Under Review',
             'rejected': 'Confirm Rejection',
-            'interview_scheduled': 'Cannot Update',
         };
         return labelMap[status] || 'Confirm Status Change';
     };

@@ -26,11 +26,11 @@ from app.db.connection_manager import Base, engine, AsyncSessionLocal
 settings = AppConfig()
 
 
-SUPER_ADMIN_EMAIL = os.getenv("SUPER_ADMIN_EMAIL", "tharunikaamanokaran@gmail.com")
-SUPER_ADMIN_FIRST_NAME = os.getenv("SUPER_ADMIN_FIRST_NAME", "Tharunikaa")
-SUPER_ADMIN_LAST_NAME = os.getenv("SUPER_ADMIN_LAST_NAME", "M")
+SUPER_ADMIN_EMAIL = os.getenv("SUPER_ADMIN_EMAIL", "athi@mailinator.com")
+SUPER_ADMIN_FIRST_NAME = os.getenv("SUPER_ADMIN_FIRST_NAME", "sheetal")
+SUPER_ADMIN_LAST_NAME = os.getenv("SUPER_ADMIN_LAST_NAME", "a")
 SUPER_ADMIN_TYPE = os.getenv("SUPER_ADMIN_TYPE", "SUPER_ADMIN")
-SUPER_ADMIN_PHONE = os.getenv("SUPER_ADMIN_PHONE","8754534280")
+SUPER_ADMIN_PHONE = os.getenv("SUPER_ADMIN_PHONE","7708863679")
 # ---------------------------------------------------------------
 async def add_or_update_super_admin():
     # Ensure tables are created if this is the very first run

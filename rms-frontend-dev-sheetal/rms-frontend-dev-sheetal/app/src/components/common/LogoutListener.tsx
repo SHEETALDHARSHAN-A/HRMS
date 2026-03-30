@@ -26,7 +26,9 @@ const LogoutListener: React.FC = () => {
           const manager = MultiAccountManager.getInstance();
           manager.clearCurrentSession();
           clearTokenForCurrentTab();
-          try { localStorage.setItem('logout-event', Date.now().toString()); } catch (e) {}
+          try { localStorage.setItem('logout-event', Date.now().toString()); } catch {
+            // no-op
+          }
           window.location.href = '/auth';
         } catch (err) {
           console.error('LogoutListener: error during logout', err);
@@ -46,7 +48,7 @@ const LogoutListener: React.FC = () => {
     // On mount, record the current logout-event value
     try {
       lastSeenRef.current = localStorage.getItem('logout-event');
-    } catch (e) {
+    } catch {
       lastSeenRef.current = null;
     }
 
@@ -58,7 +60,7 @@ const LogoutListener: React.FC = () => {
         showLogoutModal();
         lastSeenRef.current = stamp;
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
 

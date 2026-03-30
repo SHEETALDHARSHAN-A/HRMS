@@ -310,16 +310,24 @@ class UpdateJobPost:
             # the repo here for UPDATE flows (or if the CREATE branch didn't
             # produce an updated_job for some reason).
             if action != "CREATE":
-                updated_job = await update_or_create_job_details(
-                    db=self.db,
-                    job_id=processed_job_id,
-                    job_data=job_fields,
-                    skills_data=skills_data,
-                    description_data=description_data,
-                    location_data=location_data,
-                    rounds_data=rounds_data,
-                    agent_configs_data=agent_configs_data,
-                )
+                try:
+                    updated_job = await update_or_create_job_details(
+                        db=self.db,
+                        job_id=processed_job_id,
+                        job_data=job_fields,
+                        skills_data=skills_data,
+                        description_data=description_data,
+                        location_data=location_data,
+                        rounds_data=rounds_data,
+                        agent_configs_data=agent_configs_data,
+                    )
+                except ValueError as ve:
+                    return {
+                        "success": False,
+                        "job_details": None,
+                        "message": str(ve),
+                        "status_code": status.HTTP_400_BAD_REQUEST,
+                    }
 
             if updated_job is None:
                 return {
@@ -359,10 +367,11 @@ class UpdateJobPost:
 
         except Exception as e:
             print(f"[CRIT] Unexpected error during job {action}: {e}")
+            safe_error = str(e).strip() or "Unknown error"
             return {
                 "success": False,
                 "job_details": None,
-                "message": "Unexpected error occurred while updating/creating job.",
+                "message": f"Unexpected error occurred while updating/creating job: {safe_error}",
                 "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
             }
 

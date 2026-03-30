@@ -90,7 +90,7 @@ const JobListForHub: React.FC<JobListForHubProps> = ({ onJobSelect }) => {
       } catch (e) {
         console.error('Failed to enrich jobs with candidate stats', e);
       }
-    } catch (err) {
+    } catch {
                 // Enrich each job with candidate stats (applied/shortlisted/rejected/under_review)
     } finally {
       setIsLoading(false);

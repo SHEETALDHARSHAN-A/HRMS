@@ -2,6 +2,7 @@
 
 import uuid
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -230,6 +231,33 @@ async def update_or_create_job_details(
     """Create or update a job post with related entities."""
 
     try:
+        def _coerce_uuid_or_none(value: Any) -> Optional[uuid.UUID]:
+            if value is None:
+                return None
+            if isinstance(value, uuid.UUID):
+                return value
+            text_value = str(value).strip()
+            if not text_value:
+                return None
+            try:
+                return uuid.UUID(text_value)
+            except Exception:
+                return None
+
+        def _coerce_int_or_none(value: Any) -> Optional[int]:
+            if value is None:
+                return None
+            try:
+                text_value = str(value).strip()
+                if text_value == "":
+                    return None
+                return int(text_value)
+            except Exception:
+                try:
+                    return int(float(str(value).replace(',', '').strip()))
+                except Exception:
+                    return None
+
         if job_id:
             job_uuid = uuid.UUID(job_id)
             result = await db.execute(select(JobDetails).where(JobDetails.id == job_uuid))
@@ -239,7 +267,6 @@ async def update_or_create_job_details(
             job = None
 
         timestamp = datetime.now(timezone.utc)
-        raw_job_data = dict(job_data or {})
         raw_job_data = dict(job_data or {})
         if 'min_salary' in raw_job_data and 'minimum_salary' not in raw_job_data:
             raw_job_data['minimum_salary'] = raw_job_data.pop('min_salary')
@@ -515,6 +542,21 @@ async def update_or_create_job_details(
         # Enforce persona=null for offline/in-person modes and persist
         # any provided score_distribution.
         # ---------------------------------------
+        round_config_db_columns: Optional[set[str]] = None
+        if agent_configs_data:
+            try:
+                cols_res = await db.execute(
+                    text("SELECT column_name FROM information_schema.columns WHERE table_name = 'round_config'")
+                )
+                detected_cols = {row[0] for row in cols_res.fetchall()}
+                if detected_cols:
+                    round_config_db_columns = detected_cols
+            except Exception as col_err:
+                logger.warning(f"[JobRepo] Failed to introspect round_config columns: {col_err}")
+
+            if not round_config_db_columns:
+                round_config_db_columns = {c.name for c in AgentRoundConfig.__table__.columns}
+
         if agent_configs_data:
             for ac in agent_configs_data:
                 # Resolve round_list_id
@@ -563,6 +605,9 @@ async def update_or_create_job_details(
                         resolved_round_id = round_map_by_order.get(int(ac.get('round_order')))
                     except Exception:
                         resolved_round_id = None
+
+                resolved_round_id = _coerce_uuid_or_none(resolved_round_id)
+                interviewer_uuid = _coerce_uuid_or_none(ac.get('interviewer_id') or ac.get('interviewerId'))
 
                 interview_mode = (ac.get('interview_mode') or ac.get('interviewMode') or 'agent').lower()
 
@@ -679,24 +724,74 @@ async def update_or_create_job_details(
                     # Best-effort: fallback to whatever was provided
                     pass
 
-                await db.execute(
-                    insert(AgentRoundConfig).values(
-                        id=uuid.uuid4(),
-                        job_id=job_uuid,
-                        round_list_id=resolved_round_id,
-                        round_name=ac.get('roundName') or ac.get('round_name') or None,
-                        round_focus=ac.get('roundFocus') or ac.get('round_focus'),
-                        persona=persona_val,
-                        key_skills=ac.get('keySkills') or ac.get('key_skills') or [],
-                        custom_questions=ac.get('customQuestions') or ac.get('custom_questions') or [],
-                        forbidden_topics=ac.get('forbiddenTopics') or ac.get('forbidden_topics') or [],
-                        interview_mode=interview_mode,
-                        interview_time_min=ac.get('interview_time_min') or ac.get('interviewTimeMin') or ac.get('interview_time') or ac.get('interviewTime'),
-                        interview_time_max=ac.get('interview_time_max') or ac.get('interviewTimeMax') or ac.get('interview_time') or ac.get('interviewTime'),
-                        interviewer_id=ac.get('interviewer_id') or ac.get('interviewerId'),
-                        score_distribution=score_dist,
-                    )
-                )
+                ac_values = {
+                    'id': uuid.uuid4(),
+                    'job_id': job_uuid,
+                    'round_list_id': resolved_round_id,
+                    # round_name is NOT NULL in DB; never pass None explicitly.
+                    'round_name': ac.get('roundName') or ac.get('round_name') or 'Configured Round',
+                    'round_focus': ac.get('roundFocus') or ac.get('round_focus'),
+                    'persona': persona_val,
+                    'key_skills': ac.get('keySkills') or ac.get('key_skills') or [],
+                    'custom_questions': ac.get('customQuestions') or ac.get('custom_questions') or [],
+                    'forbidden_topics': ac.get('forbiddenTopics') or ac.get('forbidden_topics') or [],
+                    'interview_mode': interview_mode,
+                    'interview_time_min': _coerce_int_or_none(
+                        ac.get('interview_time_min') or ac.get('interviewTimeMin') or ac.get('interview_time') or ac.get('interviewTime')
+                    ),
+                    'interview_time_max': _coerce_int_or_none(
+                        ac.get('interview_time_max') or ac.get('interviewTimeMax') or ac.get('interview_time') or ac.get('interviewTime')
+                    ),
+                    'interviewer_id': interviewer_uuid,
+                    'coding_enabled': bool(ac.get('coding_enabled', ac.get('codingEnabled', False))),
+                    'coding_question_mode': ac.get('coding_question_mode') or ac.get('codingQuestionMode') or 'ai',
+                    'coding_difficulty': ac.get('coding_difficulty') or ac.get('codingDifficulty') or 'medium',
+                    'coding_languages': ac.get('coding_languages') or ac.get('codingLanguages') or ['python', 'javascript'],
+                    'provided_coding_question': ac.get('provided_coding_question') or ac.get('providedCodingQuestion'),
+                    'coding_test_case_mode': ac.get('coding_test_case_mode') or ac.get('codingTestCaseMode') or 'provided',
+                    'coding_test_cases': ac.get('coding_test_cases') or ac.get('codingTestCases') or [],
+                    'coding_starter_code': ac.get('coding_starter_code') or ac.get('codingStarterCode') or {},
+                    'mcq_enabled': bool(ac.get('mcq_enabled', ac.get('mcqEnabled', False))),
+                    'mcq_question_mode': ac.get('mcq_question_mode') or ac.get('mcqQuestionMode') or 'provided',
+                    'mcq_difficulty': ac.get('mcq_difficulty') or ac.get('mcqDifficulty') or 'medium',
+                    'mcq_questions': ac.get('mcq_questions') or ac.get('mcqQuestions') or [],
+                    'mcq_passing_score': _coerce_int_or_none(ac.get('mcq_passing_score') or ac.get('mcqPassingScore') or 60) or 60,
+                    'score_distribution': score_dist,
+                }
+
+                # Guard for schema drift: only insert columns that exist in the current DB table.
+                if round_config_db_columns:
+                    ac_values = {k: v for k, v in ac_values.items() if k in round_config_db_columns}
+
+                max_insert_retries = 12
+                retry_count = 0
+                while True:
+                    try:
+                        await db.execute(insert(AgentRoundConfig).values(**ac_values))
+                        break
+                    except Exception as insert_err:
+                        err_text = str(insert_err)
+                        missing_col_match = re.search(
+                            r'column "([^"]+)" of relation "round_config" does not exist',
+                            err_text,
+                            re.IGNORECASE,
+                        )
+
+                        if not missing_col_match or retry_count >= max_insert_retries:
+                            raise
+
+                        missing_col = missing_col_match.group(1)
+                        if missing_col not in ac_values:
+                            raise
+
+                        logger.warning(
+                            "[JobRepo] round_config is missing column '%s'. Removing it from insert payload and retrying.",
+                            missing_col,
+                        )
+                        ac_values.pop(missing_col, None)
+                        if round_config_db_columns is not None:
+                            round_config_db_columns.discard(missing_col)
+                        retry_count += 1
 
         await db.commit()
 

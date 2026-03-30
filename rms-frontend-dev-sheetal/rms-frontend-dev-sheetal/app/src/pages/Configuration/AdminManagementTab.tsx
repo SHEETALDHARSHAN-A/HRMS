@@ -429,7 +429,7 @@ const AdminManagementTab: React.FC = () => {
       const now = Date.now();
       const exp = inv.expires_at ? new Date(inv.expires_at).getTime() : null;
   if (inv.status === 'PENDING' && exp && exp < now) return 'EXPIRED';
-    } catch (e) {
+    } catch {
       // fall through
     }
     return inv.status;

@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo } from 'react';
 
 interface OTPInputProps {
   length: number;
@@ -21,13 +21,6 @@ const OTPInput: React.FC<OTPInputProps> = ({ length, value, onChange, disabled }
     }
     return items;
   }, [value, length]);
-
-  // Debug: log value changes and internal items to help trace issues where digits
-  // don't appear in the UI (useful during development). Remove in production.
-  useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.debug('OTPInput value changed:', { value, valueItems });
-  }, [value, valueItems]);
 
   const focusInput = (index: number) => {
     // Make sure index is within bounds
@@ -149,17 +142,12 @@ const OTPInput: React.FC<OTPInputProps> = ({ length, value, onChange, disabled }
           inputMode="numeric"
           autoComplete="off"
           className={`
-            w-1/6 aspect-square text-center text-2xl font-bold 
-            border-2 rounded-lg transition-all duration-150 outline-none
+            aspect-square w-1/6 rounded-md border text-center text-lg font-semibold shadow-xs
+            transition-all duration-150 outline-none
             ${disabled 
-              ? 'bg-gray-100 border-gray-300 text-gray-500 cursor-not-allowed' 
-              : 'bg-white border-[#4285F4] focus:border-[#4285F4] focus:ring-2 focus:ring-[#4285F4] focus:outline-none'}
+              ? 'cursor-not-allowed border-input bg-muted text-muted-foreground'
+              : 'border-input bg-background focus:border-ring focus:ring-3 focus:ring-ring/30'}
           `}
-          style={!disabled ? { 
-            borderColor: '#4285F4',
-            // Ensure the focus outline color matches the border color
-            ['--tw-ring-color' as any]: '#4285F4'
-          } as React.CSSProperties : {}}
         />
       ))}
     </div>

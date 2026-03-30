@@ -41,7 +41,22 @@ async def main():
     config = get_app_config()
     # Prefer the configured job_queue from AppConfig (loaded from .env/config files).
     # Fall back to the JOB_QUEUE env var or a safe default if not present in config.
-    queue_name = getattr(config, "job_queue", None) or os.getenv("JOB_QUEUE") or "resume_queue"
+    queue_name = str(getattr(config, "job_queue", None) or os.getenv("JOB_QUEUE") or "resume_queue").strip().strip('"').strip("'")
+    if queue_name.lower() in {"", "default_queue", "resume_queued"}:
+        print(f"[WARN] Normalizing queue name '{queue_name}' to canonical 'resume_queue'.")
+        queue_name = "resume_queue"
+
+    poppler_path = (
+        getattr(config, "poppler_path", None)
+        or os.getenv("POPPLER_PATH")
+        or os.getenv("poppler_path")
+        or os.getenv("POPLER_PATH")
+        or os.getenv("popler_path")
+    )
+    if poppler_path:
+        poppler_path = str(poppler_path).strip().strip('"').strip("'")
+    if poppler_path and poppler_path.lower() in {"none", "null"}:
+        poppler_path = None
 
     # 2. Setup Processors Dictionary
     # ResumeProcessor expects STRINGS for Redis host/port/db in its constructor
@@ -51,8 +66,8 @@ async def main():
         redis_db=str(config.redis_db),
         status_channel=config.status_channel,
         job_queue=queue_name,
-        openai_api_key=config.openai_api_key,
-        poppler_path=config.poppler_path,
+        llm_api_key=config.effective_groq_api_key,
+        poppler_path=poppler_path,
         file_path=config.file_path, 
         config=config 
     )
@@ -76,7 +91,10 @@ async def main():
     # Note: The core method in src/job_processor.py has been renamed to 'run'.
     worker = JobProcessor(worker_options)
 
-    print(f"\n[WORKER] Starting job processor on queue: {queue_name} (config.job_queue={getattr(config, 'job_queue', None)})")
+    print(
+        f"\n[WORKER] Starting job processor on queue: {queue_name} "
+        f"(config.job_queue={getattr(config, 'job_queue', None)}, poppler_path={poppler_path or 'system-path'})"
+    )
     
     await worker.run() 
 

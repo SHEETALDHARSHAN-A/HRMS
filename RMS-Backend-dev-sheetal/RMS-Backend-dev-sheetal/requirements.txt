@@ -33,6 +33,7 @@ flatbuffers==25.9.23
 frozenlist==1.8.0
 googleapis-common-protos==1.72.0
 greenlet==3.2.4
+groq
 griffe==1.14.0
 grpcio==1.76.0
 h11==0.16.0
@@ -63,6 +64,7 @@ livekit-api==1.0.7
 livekit-blingfire==1.0.0
 livekit-plugins-deepgram==1.2.18
 livekit-plugins-elevenlabs==1.2.18
+livekit-plugins-groq==1.2.18
 livekit-plugins-openai==1.2.18
 livekit-plugins-silero==1.2.18
 livekit-protocol==1.1.0

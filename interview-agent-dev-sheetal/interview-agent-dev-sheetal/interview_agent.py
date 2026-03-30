@@ -2,7 +2,10 @@ import os
 import logging
 import time
 import asyncio
+import json
 import re 
+import urllib.error
+import urllib.request
 from typing import AsyncIterable, Optional, List, Tuple, Dict, Any
 from uuid import uuid4
 from sqlalchemy.future import select
@@ -15,7 +18,7 @@ from livekit.agents import (
 )
 from livekit.protocol.models import ChatMessage
 from livekit.agents.llm import ImageContent
-from livekit.plugins import deepgram, openai, silero, elevenlabs
+from livekit.plugins import deepgram, groq, silero, elevenlabs
 import config
 from postgres_data_fetcher import (
     create_transcript_session, append_utterance_to_session,
@@ -33,12 +36,9 @@ class ProfessionalInterviewAgent(Agent):
     def __init__(self, instructions: str, room: rtc.Room, interview_context: Dict[str, Any]) -> None:
         super().__init__(
             instructions=instructions,
-            llm=openai.LLM(model="gpt-4o-mini", api_key=settings.OPENAI_API_KEY),
-            stt=openai.STT(model="whisper-1", api_key=settings.OPENAI_API_KEY),
-            tts=openai.TTS(
-                model="tts-1",
-                api_key=settings.OPENAI_API_KEY
-            ),
+            llm=groq.LLM(model=settings.GROQ_MODEL, api_key=settings.ACTIVE_GROQ_API_KEY),
+            stt=deepgram.STT(model="nova-2", api_key=settings.DEEPGRAM_API_KEY),
+            tts=elevenlabs.TTS(api_key=settings.ELEVEN_LABS_API_KEY),
             vad=silero.VAD.load(
                 min_speech_duration=0.1,
                 min_silence_duration=1.0, 
@@ -58,6 +58,8 @@ class ProfessionalInterviewAgent(Agent):
         self.db_profile_id = interview_context.get('profile_id')
         self.db_round_id = interview_context.get('round_id')
         self.db_room_id = interview_context.get('room_id') # This is the interview_token
+        self.candidate_email = interview_context.get('candidate_email')
+        self.completion_reported = False
         
         self.interview_start_time: Optional[float] = None
         self.interview_end_time: Optional[float] = None
@@ -169,9 +171,100 @@ class ProfessionalInterviewAgent(Agent):
         await self.on_exit()
         
     async def on_exit(self) -> None: 
+        if self.completion_reported:
+            return
+        self.completion_reported = True
+
         if self.silence_check_task: self.silence_check_task.cancel()
         set_session_end_time(self.session_id, time.time())
+        await self._notify_backend_interview_complete()
         await self.close()
+
+    def _build_interview_complete_url(self) -> str:
+        base = (getattr(settings, "BACKEND_BASE_URL", "") or "").strip().rstrip("/")
+        if not base:
+            return ""
+
+        lowered = base.lower()
+        if lowered.endswith("/api/v1"):
+            return f"{base}/interview/complete"
+        if lowered.endswith("/api"):
+            return f"{base}/v1/interview/complete"
+        if lowered.endswith("/v1"):
+            return f"{base}/interview/complete"
+        return f"{base}/api/v1/interview/complete"
+
+    async def _notify_backend_interview_complete(self) -> None:
+        completion_url = self._build_interview_complete_url()
+        internal_token = (getattr(settings, "INTERNAL_SERVICE_TOKEN", "") or "").strip()
+
+        if not completion_url:
+            logger.warning("Skipping interview completion callback: BACKEND_BASE_URL is not configured")
+            return
+        if not internal_token:
+            logger.warning("Skipping interview completion callback: INTERNAL_SERVICE_TOKEN is not configured")
+            return
+        if not self.db_room_id or not self.candidate_email:
+            logger.warning(
+                "Skipping interview completion callback due to missing token/email. token_present=%s email_present=%s",
+                bool(self.db_room_id),
+                bool(self.candidate_email),
+            )
+            return
+
+        payload = {
+            "token": str(self.db_room_id),
+            "email": str(self.candidate_email),
+            "session_id": str(self.session_id),
+            "final_notes": "Interview session ended by LiveKit interview agent.",
+        }
+        body = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "x-internal-token": internal_token,
+        }
+
+        def _post_completion() -> Tuple[int, str]:
+            request = urllib.request.Request(
+                completion_url,
+                data=body,
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=15) as response:
+                response_body = response.read().decode("utf-8", errors="ignore")
+                return int(response.status), response_body
+
+        try:
+            status_code, response_body = await asyncio.to_thread(_post_completion)
+            if 200 <= status_code < 300:
+                logger.info(
+                    "Interview completion callback succeeded for token %s (session %s). Response: %s",
+                    self.db_room_id,
+                    self.session_id,
+                    response_body,
+                )
+            else:
+                logger.warning(
+                    "Interview completion callback returned non-success status %s for token %s. Response: %s",
+                    status_code,
+                    self.db_room_id,
+                    response_body,
+                )
+        except urllib.error.HTTPError as exc:
+            error_body = ""
+            try:
+                error_body = exc.read().decode("utf-8", errors="ignore")
+            except Exception:
+                error_body = ""
+            logger.error(
+                "Interview completion callback failed with HTTP %s for token %s. Response: %s",
+                exc.code,
+                self.db_room_id,
+                error_body,
+            )
+        except Exception as exc:
+            logger.error("Interview completion callback failed: %s", exc)
 
     def on_user_state_change(self, event: UserStateChangedEvent) -> None: pass
     
@@ -329,6 +422,10 @@ async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
     logger.info("Professional interview worker started")
 
+    if not settings.ACTIVE_GROQ_API_KEY:
+        logger.error("Groq API key is missing. Set GROQ_API_KEY (or legacy OPENAI_API_KEY with a Groq key).")
+        return
+
     try:
         # Test the DB connection
         with get_db() as db:
@@ -359,6 +456,7 @@ async def entrypoint(ctx: JobContext) -> None:
         job_id = db_ids.get('job_id')
         profile_id = db_ids.get('profile_id')
         round_id = db_ids.get('round_id')
+        candidate_email = db_ids.get('candidate_email')
         
         if not job_id or not profile_id:
              logger.error(f"Missing job_id or profile_id for room {room_id}. Terminating.")
@@ -392,6 +490,7 @@ async def entrypoint(ctx: JobContext) -> None:
         'job_id': job_id,
         'profile_id': profile_id,
         'round_id': round_id,
+        'candidate_email': candidate_email,
         'resume_content_summary': resume_content_summary,
         'job_data': job_data,
         'candidate_profile_data': profile_data, # The full extracted_content JSON
@@ -436,8 +535,10 @@ async def entrypoint(ctx: JobContext) -> None:
         )
     except Exception as e:
         logger.error(f"Error during interview session: {e}")
-        try: set_session_end_time(agent.session_id, time.time())
-        except: pass
+        try:
+            await agent.on_exit()
+        except Exception as finalize_err:
+            logger.error(f"Error during fallback interview finalization: {finalize_err}")
 
 try:
     import livekit.agents.cli.watcher as _watcher

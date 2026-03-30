@@ -85,7 +85,7 @@ function isJwtExpired(token: string | null): boolean {
     // `exp` is seconds since epoch in most JWTs
     const expMs = (payload?.exp || 0) * 1000;
     return expMs <= Date.now();
-  } catch (e) {
+  } catch {
     return true;
   }
 }
@@ -121,43 +121,9 @@ axiosInstance.interceptors.request.use(
   (config) => {
     // Get token from our tab-safe function
     const token = getTokenForCurrentTab();
-    // Mirror backend public/excluded endpoints so these won't trigger preflight session checks
-    const EXCLUDED_PATHS: string[] = [
-      '/auth',
-      '/auth/',
-      '/auth/complete-admin-setup',
-      '/auth/complete-name-update',
-      '/auth/verify-otp',
-      '/auth/verify-email-update',
-      '/auth/email-update-success',
-      '/interview/join',
-      '/interview/thank-you',
-
-      // Public job/career endpoints
-      '/job-post/active',
-      '/job-post/public/job/',
-      '/job-post/public/search-suggestions',
-      '/job-post/public/search',
-      '/career/apply/send-otp',
-      '/career/apply/verify-and-submit',
-      '/resume/upload-resumes/',
-
-      // Full /api/v1 prefixed variants
-      '/api/v1/auth/verify-otp',
-      '/v1/auth/check-email-status',
-      '/api/v1/auth/check-email-status',
-      '/api/v1/job-post/active',
-      '/api/v1/job-post/public/job/',
-      '/api/v1/job-post/public/search-suggestions',
-      '/api/v1/job-post/public/search',
-      '/api/v1/career/apply/send-otp',
-      '/api/v1/career/apply/verify-and-submit',
-      '/api/v1/resume/upload-resumes/',
-    ];
-
     const requestUrl = (config && config.url) ? String(config.url) : '';
     const isExcluded = EXCLUDED_PATHS.some((p) => {
-      try { return requestUrl === p || requestUrl.startsWith(p) || requestUrl.includes(p); } catch (e) { return false; }
+      try { return requestUrl === p || requestUrl.startsWith(p) || requestUrl.includes(p); } catch { return false; }
     });
 
     if (!isExcluded && isJwtExpired(token)) {
@@ -168,11 +134,17 @@ axiosInstance.interceptors.request.use(
             message: 'Your session has expired. Please sign in again.',
           }
         }));
-      } catch (e) {}
+      } catch {
+        // no-op
+      }
       try {
         localStorage.setItem('logout-event', Date.now().toString());
-      } catch (e) {}
-      try { clearTokenForCurrentTab(); } catch (e) {}
+      } catch {
+        // no-op
+      }
+      try { clearTokenForCurrentTab(); } catch {
+        // no-op
+      }
       return Promise.reject(new Error('Auth token expired'));
     }
 
@@ -189,11 +161,11 @@ axiosInstance.interceptors.request.use(
             subValue: payload.sub,
             role: payload.role,
           });
-        } catch (e) {
+        } catch {
           // ignore
         }
       }
-    } else {
+    } else if (!isExcluded) {
       console.warn('⚠️ No auth token found for tab:', getTabId());
     }
     return config;
@@ -223,10 +195,18 @@ axiosInstance.interceptors.response.use(
         }));
     } 
     else if (error.response.status === 401 || error.response.status === 403) {
+        const requestUrl = (error.config && error.config.url) ? String(error.config.url) : (error.response?.config?.url ? String(error.response.config.url) : '');
+        const isExcluded = EXCLUDED_PATHS.some((p) => {
+          try { return requestUrl === p || requestUrl.startsWith(p) || requestUrl.includes(p); } catch { return false; }
+        });
+
+        if (isExcluded) {
+          return Promise.reject(error);
+        }
+
         console.warn(`API Error: ${error.response.status} ${error.response.status === 401 ? 'Unauthorized' : 'Forbidden'}. Session may be invalid.`);
         try {
           // Include the request URL so listeners can decide to ignore protected/public routes
-          const requestUrl = (error.config && error.config.url) ? String(error.config.url) : (error.response?.config?.url ? String(error.response.config.url) : '');
           window.dispatchEvent(new CustomEvent('auth-error', {
             detail: {
               status: error.response.status,
@@ -241,7 +221,7 @@ axiosInstance.interceptors.response.use(
           // even if the auth-error event misses a listener.
           try {
             localStorage.setItem('logout-event', Date.now().toString());
-          } catch (e) {
+          } catch {
             // ignore storage failures
           }
         } catch (eventError) {
@@ -263,7 +243,9 @@ axiosInstance.interceptors.response.use(
           error.message = backendMessage;
           try {
             window.dispatchEvent(new CustomEvent('api-error', { detail: { status, body: respData, message: backendMessage } }));
-          } catch (e) {}
+          } catch {
+            // no-op
+          }
     }
     return Promise.reject(error);
   }

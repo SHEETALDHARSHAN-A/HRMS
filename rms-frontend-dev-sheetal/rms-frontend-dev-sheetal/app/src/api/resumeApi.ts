@@ -24,7 +24,7 @@ export const uploadResume = async (jobId: string, file: File) => {
           if (candidateId) formData.append('user_id', String(candidateId));
         }
       }
-    } catch (e) {
+    } catch {
       // ignore parsing errors
     }
 
@@ -62,7 +62,7 @@ export const BulkUpload = async (jobId: string, files: File[]) => {
           if (candidateId) formData.append('user_id', String(candidateId));
         }
       }
-    } catch (e) {
+    } catch {
       // ignore parsing errors
     }
 

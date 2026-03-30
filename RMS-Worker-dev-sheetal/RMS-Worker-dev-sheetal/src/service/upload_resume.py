@@ -17,7 +17,7 @@ from docx import Document
 from starlette.datastructures import UploadFile
 
 # Agents & DB
-from agents import Agent, Runner
+from agents import Agent, Runner, set_tracing_disabled
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Redis
@@ -35,6 +35,12 @@ from src.exceptions import (
     ExtractionContentError,
     InvalidFileTypeError,
 )
+
+try:
+    # Groq inference works via OpenAI-compatible API. Disable OpenAI tracing to avoid non-fatal 401 noise.
+    set_tracing_disabled(True)
+except Exception:
+    pass
 
 
 # Configuration constants
@@ -67,13 +73,36 @@ class UploadResume:
         self.max_file_size_mb = MAX_FILE_SIZE_MB
 
         # Poppler path for PDF processing
-        self.poppler_path = getattr(self.config, 'poppler_path', None) or \
-                           os.getenv('POPPLER_PATH')
+        self.poppler_path = (
+            getattr(self.config, 'poppler_path', None)
+            or os.getenv('POPPLER_PATH')
+            or os.getenv('poppler_path')
+            or os.getenv('POPLER_PATH')
+            or os.getenv('popler_path')
+        )
+        if self.poppler_path:
+            self.poppler_path = str(self.poppler_path).strip().strip('"').strip("'")
+        if self.poppler_path and self.poppler_path.lower() in {'none', 'null'}:
+            self.poppler_path = None
+
+        # Make Poppler binaries discoverable by subprocess-based tools in containers.
+        if self.poppler_path and os.path.isdir(self.poppler_path):
+            current_path = os.getenv('PATH', '')
+            if self.poppler_path not in current_path.split(os.pathsep):
+                os.environ['PATH'] = f"{self.poppler_path}{os.pathsep}{current_path}"
         
         print(
             f"[INFO] UploadResume initialized: max_size={self.max_file_size_mb}MB, "
-            f"timeout={EXTRACTION_TIMEOUT_SECONDS}s"
+            f"timeout={EXTRACTION_TIMEOUT_SECONDS}s, poppler_path={self.poppler_path or 'system-path'}"
         )
+        self._configure_llm_environment()
+
+    def _configure_llm_environment(self) -> None:
+        """Configure openai-agents to route requests to Groq."""
+        api_key = self.config.effective_groq_api_key
+        if api_key:
+            os.environ["OPENAI_API_KEY"] = api_key
+            os.environ["OPENAI_BASE_URL"] = self.config.groq_base_url
 
     # ============================================================
     # Agent Creation
@@ -81,8 +110,13 @@ class UploadResume:
 
     def create_resume_extraction_agent(self) -> Agent:
         """Creates the multilingual resume extraction agent with validation."""
+        if not self.config.effective_groq_api_key:
+            raise ValueError("Groq API key is not configured for resume extraction")
+
+        self._configure_llm_environment()
         return Agent(
             name="Multilingual Resume Extractor",
+            model=self.config.effective_groq_model,
             instructions=RESUME_EXTRACTION_PROMPT
         )
 

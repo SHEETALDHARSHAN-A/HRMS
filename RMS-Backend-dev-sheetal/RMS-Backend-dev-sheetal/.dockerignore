@@ -1,0 +1,32 @@
+# VCS and editor
+.git
+.gitignore
+.vscode
+.idea
+
+# Python cache and virtual envs
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+venv
+env
+
+# Local env and runtime artifacts
+.env
+.env.*
+!.env.example
+.coverage
+.coverage.*
+htmlcov
+*.log
+
+# Build and test output
+build
+dist
+tests
+
+# Local tmp and debug files
+tmp_*

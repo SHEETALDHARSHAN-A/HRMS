@@ -38,7 +38,7 @@ const PublicLayout: React.FC<PublicLayoutProps> = ({
           font-family: 'Poppins', sans-serif;
         }
         
-        /* Custom navigation styling to match PRAYAG.AI */
+        /* Custom navigation styling to match*/
         .nav-container {
           font-family: 'Poppins', sans-serif;
           font-size: 16px;
@@ -79,7 +79,7 @@ const PublicLayout: React.FC<PublicLayoutProps> = ({
 
             {/* --- UPDATED: Logo --- */}
             <Link to="/" className="flex-shrink-0 flex items-center gap-3">
-              <img className="h-10 w-auto" src={appLogo} alt="PRAYAG.AI" />
+              <img className="h-10 w-auto" src={appLogo} alt="" />
             </Link>
 
             {/* --- CENTERED: Main Navigation --- */}
@@ -269,7 +269,7 @@ const PublicLayout: React.FC<PublicLayoutProps> = ({
       {/* Footer */}
       <footer className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 text-center">
-          <p className="text-sm text-gray-500 dark:text-gray-400">&copy; {new Date().getFullYear()} PRAYAG. All rights reserved.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">&copy; {new Date().getFullYear()}. All rights reserved.</p>
         </div>
       </footer>
     </div>

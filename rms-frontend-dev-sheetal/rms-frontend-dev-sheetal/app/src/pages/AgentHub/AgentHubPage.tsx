@@ -32,6 +32,19 @@ interface AgentRoundConfig {
   keySkills: string[];
   customQuestions: string[];
   forbiddenTopics: string[];
+  codingEnabled: boolean;
+  codingQuestionMode: 'ai' | 'provided';
+  codingDifficulty: 'easy' | 'medium' | 'hard';
+  codingLanguages: string[];
+  providedCodingQuestion: string;
+  codingTestCaseMode: 'ai' | 'provided';
+  codingTestCases: any[];
+  codingStarterCode: Record<string, string>;
+  mcqEnabled: boolean;
+  mcqQuestionMode: 'ai' | 'provided';
+  mcqDifficulty: 'easy' | 'medium' | 'hard';
+  mcqQuestions: any[];
+  mcqPassingScore: number;
 }
 
 // This is the *job definition* for a single round
@@ -209,6 +222,66 @@ const TagInput: React.FC<{
   );
 };
 
+const JsonEditor: React.FC<{
+  label: string;
+  value: any;
+  onChange: (value: any) => void;
+  format: 'array' | 'object';
+  helperText?: string;
+  rows?: number;
+}> = ({ label, value, onChange, format, helperText, rows = 8 }) => {
+  const [draft, setDraft] = useState('');
+  const [parseError, setParseError] = useState('');
+
+  useEffect(() => {
+    const fallback = format === 'array' ? [] : {};
+    try {
+      const next = value ?? fallback;
+      setDraft(JSON.stringify(next, null, 2));
+      setParseError('');
+    } catch {
+      setDraft(JSON.stringify(fallback, null, 2));
+      setParseError('');
+    }
+  }, [value, format]);
+
+  const handleBlur = () => {
+    const fallback = format === 'array' ? [] : {};
+    try {
+      const parsed = draft.trim() ? JSON.parse(draft) : fallback;
+      const validArray = format === 'array' && Array.isArray(parsed);
+      const validObject =
+        format === 'object' && typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed);
+
+      if (!validArray && !validObject) {
+        setParseError(`Expected a JSON ${format}.`);
+        return;
+      }
+
+      onChange(parsed);
+      setParseError('');
+    } catch {
+      setParseError('Invalid JSON. Fix syntax before saving.');
+    }
+  };
+
+  return (
+    <div>
+      <label className={labelClasses}>{label}</label>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={handleBlur}
+        rows={rows}
+        spellCheck={false}
+        className={`${inputClasses} font-mono text-xs`}
+      />
+      {helperText && <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{helperText}</p>}
+      {parseError && <p className="mt-1.5 text-xs text-red-600">{parseError}</p>}
+    </div>
+  );
+};
+
 /**
  * Custom Dropdown for Persona Selection
  */
@@ -329,7 +402,25 @@ const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') 
         );
 
         if (savedConfig) {
-          return savedConfig as AgentRoundConfig; // Use the saved config (ensure correct type)
+          return {
+            ...savedConfig,
+            codingEnabled: Boolean(savedConfig.codingEnabled ?? false),
+            codingQuestionMode: (savedConfig.codingQuestionMode || 'ai') as 'ai' | 'provided',
+            codingDifficulty: (savedConfig.codingDifficulty || 'medium') as 'easy' | 'medium' | 'hard',
+            codingLanguages: savedConfig.codingLanguages || ['python'],
+            providedCodingQuestion: savedConfig.providedCodingQuestion || '',
+            codingTestCaseMode: (savedConfig.codingTestCaseMode || 'provided') as 'ai' | 'provided',
+            codingTestCases: Array.isArray(savedConfig.codingTestCases) ? savedConfig.codingTestCases : [],
+            codingStarterCode:
+              savedConfig.codingStarterCode && typeof savedConfig.codingStarterCode === 'object'
+                ? savedConfig.codingStarterCode
+                : {},
+            mcqEnabled: Boolean(savedConfig.mcqEnabled ?? false),
+            mcqQuestionMode: (savedConfig.mcqQuestionMode || 'provided') as 'ai' | 'provided',
+            mcqDifficulty: (savedConfig.mcqDifficulty || 'medium') as 'easy' | 'medium' | 'hard',
+            mcqQuestions: Array.isArray(savedConfig.mcqQuestions) ? savedConfig.mcqQuestions : [],
+            mcqPassingScore: Number(savedConfig.mcqPassingScore ?? 60) || 60,
+          } as AgentRoundConfig;
         }
 
         // No saved config, create a default one
@@ -343,6 +434,19 @@ const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') 
           keySkills: [],
           customQuestions: [],
           forbiddenTopics: [],
+          codingEnabled: false,
+          codingQuestionMode: 'ai',
+          codingDifficulty: 'medium',
+          codingLanguages: ['python'],
+          providedCodingQuestion: '',
+          codingTestCaseMode: 'provided',
+          codingTestCases: [],
+          codingStarterCode: {},
+          mcqEnabled: false,
+          mcqQuestionMode: 'provided',
+          mcqDifficulty: 'medium',
+          mcqQuestions: [],
+          mcqPassingScore: 60,
         } as AgentRoundConfig;
       }
     );
@@ -549,6 +653,231 @@ const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') 
                 onAdd={(q) => addCustomQuestion(activeRoundConfig.roundListId, q)}
               />
             </div>
+
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Coding Challenge</h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Enable coding challenge with language control, starter code, and test-case evaluation.
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={activeRoundConfig.codingEnabled}
+                    onChange={(e) =>
+                      updateRoundConfig(activeRoundConfig.roundListId, 'codingEnabled', e.target.checked)
+                    }
+                  />
+                  Enabled
+                </label>
+              </div>
+
+              {activeRoundConfig.codingEnabled && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className={labelClasses}>Question Mode</label>
+                      <select
+                        value={activeRoundConfig.codingQuestionMode}
+                        onChange={(e) =>
+                          updateRoundConfig(
+                            activeRoundConfig.roundListId,
+                            'codingQuestionMode',
+                            e.target.value as 'ai' | 'provided'
+                          )
+                        }
+                        className={inputClasses}
+                      >
+                        <option value="ai">AI Generated</option>
+                        <option value="provided">Admin Provided</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Difficulty</label>
+                      <select
+                        value={activeRoundConfig.codingDifficulty}
+                        onChange={(e) =>
+                          updateRoundConfig(
+                            activeRoundConfig.roundListId,
+                            'codingDifficulty',
+                            e.target.value as 'easy' | 'medium' | 'hard'
+                          )
+                        }
+                        className={inputClasses}
+                      >
+                        <option value="easy">Easy</option>
+                        <option value="medium">Medium</option>
+                        <option value="hard">Hard</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelClasses}>Test Case Mode</label>
+                      <select
+                        value={activeRoundConfig.codingTestCaseMode}
+                        onChange={(e) =>
+                          updateRoundConfig(
+                            activeRoundConfig.roundListId,
+                            'codingTestCaseMode',
+                            e.target.value as 'ai' | 'provided'
+                          )
+                        }
+                        className={inputClasses}
+                      >
+                        <option value="provided">Preconfigured</option>
+                        <option value="ai">AI Generated</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <TagInput
+                    label="Allowed Coding Languages"
+                    tags={activeRoundConfig.codingLanguages}
+                    setTags={(newTags) =>
+                      updateRoundConfig(activeRoundConfig.roundListId, 'codingLanguages', newTags)
+                    }
+                    placeholder="Add language and press Enter..."
+                  />
+
+                  <JsonEditor
+                    label="Starter Code (JSON object keyed by language)"
+                    value={activeRoundConfig.codingStarterCode}
+                    format="object"
+                    onChange={(parsed) =>
+                      updateRoundConfig(activeRoundConfig.roundListId, 'codingStarterCode', parsed)
+                    }
+                    helperText='Example: {"python":"def solve(input_data):\\n    return None"}'
+                    rows={7}
+                  />
+
+                  {activeRoundConfig.codingQuestionMode === 'provided' && (
+                    <div>
+                      <label className={labelClasses}>Provided Coding Question</label>
+                      <textarea
+                        rows={5}
+                        className={inputClasses}
+                        placeholder="Paste the exact coding question candidates should solve."
+                        value={activeRoundConfig.providedCodingQuestion}
+                        onChange={(e) =>
+                          updateRoundConfig(
+                            activeRoundConfig.roundListId,
+                            'providedCodingQuestion',
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+                  )}
+
+                  {activeRoundConfig.codingTestCaseMode === 'provided' && (
+                    <JsonEditor
+                      label="Preconfigured Coding Test Cases"
+                      value={activeRoundConfig.codingTestCases}
+                      format="array"
+                      onChange={(parsed) =>
+                        updateRoundConfig(activeRoundConfig.roundListId, 'codingTestCases', parsed)
+                      }
+                      helperText='Example item: {"input":"1 2","expectedOutput":"3","isHidden":false,"weight":2}'
+                      rows={8}
+                    />
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-white">MCQ Challenge</h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Enable objective MCQ round with configurable passing score and question bank.
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={activeRoundConfig.mcqEnabled}
+                    onChange={(e) =>
+                      updateRoundConfig(activeRoundConfig.roundListId, 'mcqEnabled', e.target.checked)
+                    }
+                  />
+                  Enabled
+                </label>
+              </div>
+
+              {activeRoundConfig.mcqEnabled && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className={labelClasses}>Question Mode</label>
+                      <select
+                        value={activeRoundConfig.mcqQuestionMode}
+                        onChange={(e) =>
+                          updateRoundConfig(
+                            activeRoundConfig.roundListId,
+                            'mcqQuestionMode',
+                            e.target.value as 'ai' | 'provided'
+                          )
+                        }
+                        className={inputClasses}
+                      >
+                        <option value="provided">Preconfigured</option>
+                        <option value="ai">AI Generated</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className={labelClasses}>Difficulty</label>
+                      <select
+                        value={activeRoundConfig.mcqDifficulty}
+                        onChange={(e) =>
+                          updateRoundConfig(
+                            activeRoundConfig.roundListId,
+                            'mcqDifficulty',
+                            e.target.value as 'easy' | 'medium' | 'hard'
+                          )
+                        }
+                        className={inputClasses}
+                      >
+                        <option value="easy">Easy</option>
+                        <option value="medium">Medium</option>
+                        <option value="hard">Hard</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className={labelClasses}>Passing Score (%)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={activeRoundConfig.mcqPassingScore}
+                        onChange={(e) => {
+                          const raw = Number(e.target.value);
+                          const next = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 60;
+                          updateRoundConfig(activeRoundConfig.roundListId, 'mcqPassingScore', next);
+                        }}
+                        className={inputClasses}
+                      />
+                    </div>
+                  </div>
+
+                  {activeRoundConfig.mcqQuestionMode === 'provided' && (
+                    <JsonEditor
+                      label="Preconfigured MCQ Questions"
+                      value={activeRoundConfig.mcqQuestions}
+                      format="array"
+                      onChange={(parsed) =>
+                        updateRoundConfig(activeRoundConfig.roundListId, 'mcqQuestions', parsed)
+                      }
+                      helperText='Example item: {"question":"...","options":["A","B","C","D"],"answer":"A"}'
+                      rows={10}
+                    />
+                  )}
+                </>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -644,15 +973,49 @@ const AgentHubPageInner: React.FC = () => {
     if (result.success) {
       // Normalize backend shape to frontend expectations.
       const rawJobs = result.data.jobs || [];
-      const normalized = rawJobs.map((j: any) => ({
-        id: j.job_id || j.id || j.jobId || j.id,
-        title: j.title || j.job_title || j.jobTitle || j.job_title,
-        department: j.department || j.department_name || null,
-        interview_rounds: j.interview_rounds || j.interviewRounds || j.rounds || [],
-        agentRounds: j.agentRounds || j.agent_rounds || j.agent_configs || [],
-        // keep any other fields for backward compatibility
-        ...j,
-      }));
+      const normalized = rawJobs.map((j: any) => {
+        const normalizedRounds = (j.interview_rounds || j.interviewRounds || j.rounds || []).map((r: any) => ({
+          id: String(r.id || r.round_id || r.roundId || ''),
+          name: r.name || r.round_name || r.roundName || 'Round',
+          order: Number(r.order || r.round_order || r.roundOrder || 1),
+          description: r.description || r.round_description || r.roundFocus || '',
+        }));
+
+        const normalizedAgentRounds = (j.agentRounds || j.agent_rounds || j.agent_configs || []).map((r: any) => ({
+          id: String(r.id || `new_${r.roundListId || r.round_list_id || ''}`),
+          roundListId: String(r.roundListId || r.round_list_id || ''),
+          jobId: String(r.jobId || r.job_id || j.job_id || j.id || ''),
+          roundName: r.roundName || r.round_name || 'Configured Round',
+          roundFocus: r.roundFocus || r.round_focus || '',
+          persona: (r.persona || 'alex') as 'alex' | 'dr-evan' | 'sam',
+          keySkills: r.keySkills || r.key_skills || [],
+          customQuestions: r.customQuestions || r.custom_questions || [],
+          forbiddenTopics: r.forbiddenTopics || r.forbidden_topics || [],
+          codingEnabled: Boolean(r.codingEnabled ?? r.coding_enabled ?? false),
+          codingQuestionMode: (r.codingQuestionMode || r.coding_question_mode || 'ai') as 'ai' | 'provided',
+          codingDifficulty: (r.codingDifficulty || r.coding_difficulty || 'medium') as 'easy' | 'medium' | 'hard',
+          codingLanguages: r.codingLanguages || r.coding_languages || ['python'],
+          providedCodingQuestion: r.providedCodingQuestion || r.provided_coding_question || '',
+          codingTestCaseMode: (r.codingTestCaseMode || r.coding_test_case_mode || 'provided') as 'ai' | 'provided',
+          codingTestCases: r.codingTestCases || r.coding_test_cases || [],
+          codingStarterCode: r.codingStarterCode || r.coding_starter_code || {},
+          mcqEnabled: Boolean(r.mcqEnabled ?? r.mcq_enabled ?? false),
+          mcqQuestionMode: (r.mcqQuestionMode || r.mcq_question_mode || 'provided') as 'ai' | 'provided',
+          mcqDifficulty: (r.mcqDifficulty || r.mcq_difficulty || 'medium') as 'easy' | 'medium' | 'hard',
+          mcqQuestions: r.mcqQuestions || r.mcq_questions || [],
+          mcqPassingScore: Number(r.mcqPassingScore ?? r.mcq_passing_score ?? 60) || 60,
+        }));
+
+        return {
+          // keep any other fields for backward compatibility
+          ...j,
+          id: String(j.job_id || j.id || j.jobId || ''),
+          title: j.title || j.job_title || j.jobTitle || 'Untitled Job',
+          department: j.department || j.department_name || null,
+          interview_rounds: normalizedRounds,
+          agentRounds: normalizedAgentRounds,
+        };
+      });
       setAllJobs(normalized);
       // Select the first job by default
       if (normalized.length > 0) {
@@ -677,8 +1040,8 @@ const AgentHubPageInner: React.FC = () => {
     if (!term) return allJobs;
 
     return allJobs.filter((job) => {
-      const title = (job.title ?? job.job_title ?? '').toString().toLowerCase();
-      const dept = (job.department ?? job.department_name ?? '').toString().toLowerCase();
+      const title = (job.title || '').toString().toLowerCase();
+      const dept = (job.department || '').toString().toLowerCase();
       return title.includes(term) || dept.includes(term);
     });
   }, [allJobs, searchTerm]);

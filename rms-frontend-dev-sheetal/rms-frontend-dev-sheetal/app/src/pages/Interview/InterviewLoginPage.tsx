@@ -96,6 +96,8 @@ const InterviewLoginPage: React.FC = () => {
       <InterviewRoom
         serverUrl={liveKitCreds.url}
         token={liveKitCreds.token}
+        interviewToken={token}
+        candidateEmail={email}
       />
     );
   }
@@ -178,7 +180,7 @@ const InterviewLoginPage: React.FC = () => {
               value={otp}
               onChange={(v: string) => {
                 // Debug: log OTP updates to ensure parent state receives changes
-                // eslint-disable-next-line no-console
+                 
                 console.debug('InterviewLoginPage OTP change:', { previous: otp, next: v });
                 setOtp(v);
               }}

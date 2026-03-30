@@ -49,15 +49,15 @@ const SchedulingTab: React.FC = () => {
           subject: data.subject_template,
           bodyHtml: data.body_template_html,
         });
-      } catch (error) {
-        showToast({ message: 'error', type: 'Failed to load email template configuration.' });
+      } catch {
+        showToast('Failed to load email template configuration.', 'error');
         
       } finally {
         setIsTemplateLoading(false);
       }
     };
     fetchInitialTemplate();
-  }, []);
+  }, [showToast]);
 
   // --- 2. PREVIEW LOGIC (POST /preview Endpoint) ---
   const handlePreview = useCallback(async () => {
@@ -71,19 +71,22 @@ const SchedulingTab: React.FC = () => {
 
     try {
       const data = await previewTemplate(previewRequest);
+      if (!data) {
+        throw new Error('Preview response was empty.');
+      }
       // The data returned is fully rendered HTML/Subject
       setPreviewContent({
         subject: data.rendered_subject,
         bodyHtml: data.rendered_html_body,
       });
-    } catch (error) {
-      showToast('error', 'Failed to generate email preview.');
+    } catch {
+      showToast('Failed to generate email preview.', 'error');
     }
   }, [template, showToast]);
 
 
   // --- 3. FINAL SEND/UPDATE LOGIC (POST /template Endpoint) ---
-  const handleFinalSchedule = async (schedulingDetails: any) => {
+  const handleFinalSchedule = async (_schedulingDetails: Record<string, unknown> = {}) => {
     // A. First, save the user's current edited template
     try {
       await updateTemplate({
@@ -91,24 +94,22 @@ const SchedulingTab: React.FC = () => {
         subject_template: template.subject, // Raw template content is saved
         body_template_html: template.bodyHtml, // Raw template content is saved
       });
-      showToast('success', 'Email template saved successfully.');
-    } catch (error) {
+      showToast('Email template saved successfully.', 'success');
+    } catch {
       // It's critical to continue scheduling even if saving the template fails
-      showToast('warning', 'Failed to save template, sending email anyway...');
+      showToast('Failed to save template, sending email anyway...', 'warning');
     }
 
     // B. Call the main scheduling API (assuming it accepts the custom content)
     try {
-        const finalPayload = {
-            ...schedulingDetails,
-            // Pass the template content so the scheduling service knows which version to use
-            custom_subject: template.subject, 
-            custom_body: template.bodyHtml,
-        };
-        // await schedulingApi.scheduleInterview(finalPayload);
-        showToast('success', 'Interviews scheduled and emails sent!');
-    } catch (error) {
-        showToast('error', 'Failed to schedule interviews.');
+      // await schedulingApi.scheduleInterview({
+      //   ..._schedulingDetails,
+      //   custom_subject: template.subject,
+      //   custom_body: template.bodyHtml,
+      // });
+        showToast('Interviews scheduled and emails sent!', 'success');
+    } catch {
+        showToast('Failed to schedule interviews.', 'error');
     }
   };
 
@@ -118,7 +119,7 @@ const SchedulingTab: React.FC = () => {
     <div>
       <h2>Email Invitation Configuration</h2>
       <p>
-        **Available Placeholders:** `{{CANDIDATE_NAME}}`, `{{JOIN_URL}}`, `{{ROOM_CODE}}`, etc.
+        Available Placeholders: {'{{CANDIDATE_NAME}}'}, {'{{JOIN_URL}}'}, {'{{ROOM_CODE}}'}, etc.
       </p>
 
       {/* Subject Input */}

@@ -37,11 +37,32 @@ class AppConfig(BaseSettings):
     redis_port: str 
     redis_db: str 
 
-    # OpenAI Config
-    openai_api_key: str 
-    openai_model: str 
-    temperature: float
-    openai_cache: bool
+    # AI Provider Config (Groq-first with legacy OpenAI fallback)
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    openai_api_key: str = ""
+    openai_model: str = ""
+    temperature: float = 0.2
+    openai_cache: bool = False
+
+    @property
+    def effective_groq_api_key(self) -> str:
+        key = (self.groq_api_key or "").strip()
+        if key:
+            return key
+
+        legacy_key = (self.openai_api_key or "").strip()
+        return legacy_key if legacy_key.startswith("gsk_") else ""
+
+    @property
+    def effective_groq_model(self) -> str:
+        configured = (self.groq_model or "").strip()
+        if configured:
+            return configured
+
+        legacy_model = (self.openai_model or "").strip()
+        return legacy_model or "llama-3.3-70b-versatile"
     
     # LiveKit Server Config (optional for local/dev)
     livekit_url: str | None = None

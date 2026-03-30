@@ -17,15 +17,7 @@ import Button from '../../components/common/Button';
 import { useRecruitmentData } from '../../hooks/useRecruitmentData';
 import { patchCandidateStatus, scheduleInterview } from '../../api/recruitmentApi'; 
 import { getJobPostById } from '../../api/jobApi'; 
-import type { Candidate, CandidateStatus, InterviewLevel, InterviewType } from '../../api/recruitmentApi';
-
-
-// Map job post type (from jobApi) to the API type (for recruitmentApi)
-const mapJobPostTypeToApiType = (jobType: JobTypeDetails['interview_type']): InterviewType => {
-    if (jobType === 'agent') return 'Agent_interview';
-    if (jobType === 'offline' || jobType === 'hybrid') return 'In_person'; 
-    return 'Agent_interview'; // Default fallback
-};
+import type { Candidate, CandidateStatus, InterviewLevel, InterviewType, ScheduleInterviewData } from '../../api/recruitmentApi';
 
 
 // -- MAIN JOB RECRUITMENT PAGE CONTENT COMPONENT ---
@@ -184,14 +176,14 @@ const JobRecruitmentContent: React.FC = () => {
             const apiType = type === 'Agent_interview' ? 'Agent_interview' : 'In_person';
             const levelOfInterview = type === 'Agent_interview' ? level.toLowerCase() : 'easy'; 
 
-            const payload = {
+            const payload: ScheduleInterviewData = {
                 job_id: jobId,
                 round_id: roundId, 
                 profile_id: profileIds, 
                 interview_date: interview_date, 
                 interview_time: interview_time, 
                 interviewer_id: "", 
-                interview_type: apiType, 
+                interview_type: apiType as InterviewType,
                 level_of_interview: levelOfInterview, 
                 email_subject: emailSubject, 
                 email_body: emailBody,       

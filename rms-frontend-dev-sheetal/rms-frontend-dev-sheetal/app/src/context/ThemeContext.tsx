@@ -36,7 +36,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     try {
       document.documentElement.classList.remove('dark');
       document.documentElement.style.colorScheme = 'light';
-    } catch (e) {
+    } catch {
       // ignore (server-side rendering or restricted env)
     }
   }, []);

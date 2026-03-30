@@ -8,9 +8,11 @@ interface FileUploadProps {
   onFileSelect: (files: File | File[]) => void;
   children: ReactNode; // Accepts any JSX as button content
   className?: string; // Allows parent to pass custom styles
+  onDragOver?: () => void;
+  onDragLeave?: () => void;
 }
 
-const FileUpload: FC<FileUploadProps> = ({ onFileSelect, children, className }) => {
+const FileUpload: FC<FileUploadProps> = ({ onFileSelect, children, className, onDragOver, onDragLeave }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -36,10 +38,12 @@ const FileUpload: FC<FileUploadProps> = ({ onFileSelect, children, className }) 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(true);
+    onDragOver?.();
   };
 
   const handleDragLeave = () => {
     setIsDragging(false);
+    onDragLeave?.();
   };
 
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {

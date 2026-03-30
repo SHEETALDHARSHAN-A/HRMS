@@ -70,7 +70,7 @@ const EmailTemplateManagementTab: React.FC<EmailTemplateManagementTabProps> = ({
             setBody(data.body_template_html);
             showToast(`Loaded saved template: ${key}`, 'success');
 
-        } catch (error: any) {
+        } catch {
             // 2. If it fails (e.g., 404), load the hardcoded default
             const fallback = DEFAULT_EMAIL_TEMPLATES.get(key);
             if (fallback) {

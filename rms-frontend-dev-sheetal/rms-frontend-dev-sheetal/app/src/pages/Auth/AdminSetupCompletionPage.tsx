@@ -336,7 +336,7 @@ const AdminSetupCompletionPage: React.FC = () => {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
                 <div className="bg-white p-10 rounded-xl shadow-2xl w-full max-w-md flex flex-col items-center">
-                    <img src="/logo.svg" alt="PRAYAG.AI" className="h-14 w-auto mb-8" />
+                    <img src="/logo.svg" alt="" className="h-14 w-auto mb-8" />
                     <div className="w-full text-center">
                         {renderVerificationContent()}
                         <div className="text-sm text-gray-500 mt-2">Redirecting to authentication page in a few seconds...</div>
@@ -349,7 +349,7 @@ const AdminSetupCompletionPage: React.FC = () => {
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
             <div className="bg-white p-10 rounded-xl shadow-2xl w-full max-w-md flex flex-col items-center">
-                <img src="/logo.svg" alt="PRAYAG.AI" className="h-14 w-auto mb-8" />
+                <img src="/logo.svg" alt="" className="h-14 w-auto mb-8" />
                 {renderContent()}
             </div>
         </div>

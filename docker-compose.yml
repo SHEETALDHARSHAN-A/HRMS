@@ -1,0 +1,160 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rms-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rms_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-rms_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: rms-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  pgadmin:
+    image: dpage/pgadmin4:9.8
+    container_name: rms-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin123}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ./RMS-Backend-dev-sheetal/RMS-Backend-dev-sheetal
+      dockerfile: Dockerfile
+    container_name: rms-backend
+    user: "0:0"
+    restart: unless-stopped
+    env_file:
+      - ./RMS-Backend-dev-sheetal/RMS-Backend-dev-sheetal/.env
+    environment:
+      DB_NAME: ${POSTGRES_DB:-rms_db}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      FILE_PATH: /data/uploads
+      POPPLER_PATH: ${POPPLER_PATH:-/usr/bin}
+      poppler_path: ${POPPLER_PATH:-/usr/bin}
+      job_queue: resume_queue
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev-internal-token}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - worker_uploads:/data/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys;sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8000/docs').status < 500 else sys.exit(1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  worker:
+    build:
+      context: ./RMS-Worker-dev-sheetal/RMS-Worker-dev-sheetal
+      dockerfile: Dockerfile
+    container_name: rms-worker
+    user: "0:0"
+    restart: unless-stopped
+    env_file:
+      - ./RMS-Worker-dev-sheetal/RMS-Worker-dev-sheetal/.env
+    environment:
+      DB_NAME: ${POSTGRES_DB:-rms_db}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      FILE_STORAGE_PATH: /data/uploads
+      FILE_PATH: /data/uploads
+      POPPLER_PATH: ${POPPLER_PATH:-/usr/bin}
+      poppler_path: ${POPPLER_PATH:-/usr/bin}
+      JOB_QUEUE: resume_queue
+    volumes:
+      - worker_uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  interview-agent:
+    build:
+      context: ./interview-agent-dev-sheetal/interview-agent-dev-sheetal
+      dockerfile: Dockerfile
+    container_name: rms-interview-agent
+    restart: unless-stopped
+    env_file:
+      - ./interview-agent-dev-sheetal/interview-agent-dev-sheetal/.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rms_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      BACKEND_BASE_URL: http://backend:8000/api
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev-internal-token}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./rms-frontend-dev-sheetal/rms-frontend-dev-sheetal
+      dockerfile: Dockerfile
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:8000}
+    container_name: rms-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5173:80"
+
+volumes:
+  postgres_data:
+  redis_data:
+  worker_uploads:
+  pgadmin_data:

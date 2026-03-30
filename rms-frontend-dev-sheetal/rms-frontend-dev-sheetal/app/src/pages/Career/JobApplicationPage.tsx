@@ -1022,7 +1022,7 @@ const JobApplicationPage: React.FC = () => {
       <div className="max-w-3xl">
         <h2 className="text-3xl font-semibold text-gray-900 dark:text-gray-100">Application submitted</h2>
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          Thank you for applying to PRAYAG.AI. Your application is received and under review. We will contact you within <strong>2-3 business days</strong> if your profile matches the role.
+          Thank you for applying to Our company. Your application is received and under review. We will contact you within <strong>2-3 business days</strong> if your profile matches the role.
         </p>
       </div>
 
@@ -1110,7 +1110,7 @@ const JobApplicationPage: React.FC = () => {
                 </button>
                 
                 <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-3 py-1 rounded-full">
-                  PRAYAG.AI
+                  OUR COMPANY
                 </div>
               </div>
 
@@ -1133,7 +1133,7 @@ const JobApplicationPage: React.FC = () => {
                 
                 <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-4">
                   <Building2 size={14} className="text-gray-400" />
-                  <span>PRAYAG.AI</span>
+                  <span></span>
                 </div>
             
               </div>

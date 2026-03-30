@@ -9,11 +9,11 @@ from typing import List, Dict, Any
 
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_, insert, delete, update
+from sqlalchemy import and_, insert, delete, update, or_
 from app import db
 from app.db.models.scheduling_model import Scheduling
 from app.db.models.user_model import User
-from app.db.models.resume_model import Profile
+from app.db.models.resume_model import Profile, InterviewRounds
 from app.db.models.job_post_model import JobDetails, RoundList
 from app.db.models.job_post_model import JobDetails
 from app.db.models.scheduling_model import Scheduling
@@ -64,16 +64,134 @@ async def get_candidate_details_for_scheduling(db: AsyncSession, profile_ids: Li
 
     return formatted_users
 
-async def check_existing_schedules(db: AsyncSession, job_id: str, profile_ids: List[str]) -> List[str]:
-    """Checks which profiles are already scheduled for this job."""
-    # FIX: Use profile_id directly, as the conversion happens in the caller or is handled by the model
-    stmt = select(Scheduling.profile_id).where(
-        Scheduling.job_id == job_id,
-        Scheduling.profile_id.in_(profile_ids)
+async def check_existing_schedules(
+    db: AsyncSession,
+    job_id: str,
+    profile_ids: List[str],
+    requested_round_id: Optional[str] = None,
+) -> List[str]:
+    """Checks which profiles are already scheduled for this job and round.
+
+    Historical data may store scheduling.round_id either as interview_rounds.id or
+    directly as round_list.id. This function supports both shapes.
+    """
+    if not requested_round_id:
+        stmt = select(Scheduling.profile_id).where(
+            Scheduling.job_id == job_id,
+            Scheduling.profile_id.in_(profile_ids)
+        )
+        result = await db.execute(stmt)
+        return [str(pid) for pid in result.scalars().all()]
+
+    try:
+        requested_round_uuid = UUID(str(requested_round_id))
+    except Exception:
+        # If the requested round is malformed, fall back to legacy check.
+        stmt = select(Scheduling.profile_id).where(
+            Scheduling.job_id == job_id,
+            Scheduling.profile_id.in_(profile_ids)
+        )
+        result = await db.execute(stmt)
+        return [str(pid) for pid in result.scalars().all()]
+
+    stmt = (
+        select(
+            Scheduling.profile_id.label("profile_id"),
+            Scheduling.round_id.label("scheduled_round_id"),
+            InterviewRounds.id.label("interview_round_id"),
+            InterviewRounds.round_id.label("round_list_id"),
+        )
+        .select_from(Scheduling)
+        .join(InterviewRounds, Scheduling.round_id == InterviewRounds.id, isouter=True)
+        .where(
+            Scheduling.job_id == job_id,
+            Scheduling.profile_id.in_(profile_ids),
+        )
     )
-    result = await db.execute(stmt)
-    # Return list of UUID strings that are already scheduled
-    return [str(pid) for pid in result.scalars().all()]
+
+    rows = (await db.execute(stmt)).fetchall()
+
+    already_scheduled: set[str] = set()
+    for row in rows:
+        scheduled_round_id = getattr(row, "scheduled_round_id", None)
+        interview_round_id = getattr(row, "interview_round_id", None)
+        round_list_id = getattr(row, "round_list_id", None)
+
+        if (
+            scheduled_round_id == requested_round_uuid
+            or interview_round_id == requested_round_uuid
+            or round_list_id == requested_round_uuid
+        ):
+            already_scheduled.add(str(getattr(row, "profile_id")))
+
+    return list(already_scheduled)
+
+
+async def resolve_round_instance_id_for_schedule(
+    db: AsyncSession,
+    job_id: str,
+    profile_id: str,
+    requested_round_id: str,
+) -> str:
+    """Resolve the scheduling round foreign key as interview_rounds.id.
+
+    Accepts either a round_list.id or interview_rounds.id from the caller and
+    returns the interview_rounds.id to persist in scheduling_interviews.round_id.
+    """
+    try:
+        job_uuid = UUID(str(job_id))
+        profile_uuid = UUID(str(profile_id))
+        requested_round_uuid = UUID(str(requested_round_id))
+    except Exception:
+        return str(requested_round_id)
+
+    # Case 1: caller already passed interview_rounds.id
+    by_instance_stmt = (
+        select(InterviewRounds)
+        .where(InterviewRounds.id == requested_round_uuid)
+        .where(InterviewRounds.job_id == job_uuid)
+        .where(InterviewRounds.profile_id == profile_uuid)
+    )
+    by_instance = (await db.execute(by_instance_stmt)).scalars().first()
+    if by_instance is not None:
+        if not by_instance.status or str(by_instance.status).lower() in {"pending", "under_review"}:
+            by_instance.status = "interview_scheduled"
+        return str(by_instance.id)
+
+    # Case 2: caller passed round_list.id
+    by_round_list_stmt = (
+        select(InterviewRounds)
+        .where(InterviewRounds.job_id == job_uuid)
+        .where(InterviewRounds.profile_id == profile_uuid)
+        .where(InterviewRounds.round_id == requested_round_uuid)
+        .order_by(InterviewRounds.id.desc())
+    )
+    by_round_list = (await db.execute(by_round_list_stmt)).scalars().first()
+    if by_round_list is not None:
+        if not by_round_list.status or str(by_round_list.status).lower() in {"pending", "under_review"}:
+            by_round_list.status = "interview_scheduled"
+        return str(by_round_list.id)
+
+    # Create missing interview round instance if round exists for the job.
+    round_exists_stmt = (
+        select(RoundList.id)
+        .where(RoundList.job_id == job_uuid)
+        .where(RoundList.id == requested_round_uuid)
+    )
+    round_exists = (await db.execute(round_exists_stmt)).scalar_one_or_none()
+    if round_exists is None:
+        return str(requested_round_id)
+
+    new_instance = InterviewRounds(
+        job_id=job_uuid,
+        profile_id=profile_uuid,
+        round_id=requested_round_uuid,
+        status="interview_scheduled",
+    )
+    db.add(new_instance)
+    if hasattr(db, "flush"):
+        await db.flush()
+    return str(new_instance.id)
  
 async def create_schedules_batch(db: AsyncSession, schedules_data: List[Dict[str, Any]]) -> List[str]:
     """Inserts a batch of new scheduling records."""
@@ -205,6 +323,12 @@ async def get_next_round_details(db: AsyncSession, job_id: str, current_round_id
     return None # No next round found
 
 async def get_scheduled_interviews(job_id: str, round_id: str, db: AsyncSession) -> List[Dict[str, Any]]:
+    try:
+        job_uuid = UUID(job_id)
+        round_uuid = UUID(round_id)
+    except ValueError:
+        return []
+
     stmt = select(
         Scheduling.profile_id.label("profile_id"),
         Scheduling.job_id.label("job_id"),
@@ -225,11 +349,21 @@ async def get_scheduled_interviews(job_id: str, round_id: str, db: AsyncSession)
     ).join(
         JobDetails, Scheduling.job_id == JobDetails.id
     ).join(
-        RoundList, Scheduling.round_id == RoundList.id
+        InterviewRounds, Scheduling.round_id == InterviewRounds.id, isouter=True
+    ).join(
+        RoundList,
+        or_(
+            RoundList.id == Scheduling.round_id,
+            RoundList.id == InterviewRounds.round_id,
+        ),
+        isouter=True,
     ).where(
       and_(
-          Scheduling.job_id == UUID(job_id),
-          Scheduling.round_id == UUID(round_id)
+          Scheduling.job_id == job_uuid,
+          or_(
+              Scheduling.round_id == round_uuid,
+              InterviewRounds.round_id == round_uuid,
+          ),
       )  
       ).order_by(
         Scheduling.scheduled_datetime.asc()

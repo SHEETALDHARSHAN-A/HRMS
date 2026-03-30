@@ -148,7 +148,8 @@
 import AuthLeftPanel from '../components/auth/AuthLeftPanel';
 import AuthRightPanel from '../components/auth/AuthRightPanel';
 import { AuthProvider } from '../context/AuthContext';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useAuthContext } from '../context/AuthContext';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../context/ModalContext';
 import { useEffect } from 'react';
 import { clearAllAuthData } from '../utils/authUtils';
@@ -224,6 +225,8 @@ const VerificationStatus: React.FC<{ status: 'email_updated' | 'email_transfer_a
 // --- Main Auth Page Content Logic ---
 const AuthPageContent = () => {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const { switchToSignIn } = useAuthContext();
 
   const status = searchParams.get('status');
   const email = searchParams.get('new_email');
@@ -233,6 +236,13 @@ const AuthPageContent = () => {
 
   // Check if we are on a verification redirect URL
   const showStatusPage = status === 'email_updated' || status === 'error' || status === 'email_transfer_approved' || status === 'email_transfer_error';
+
+  useEffect(() => {
+    if (!showStatusPage) {
+      sessionStorage.removeItem('authStep');
+      switchToSignIn?.();
+    }
+  }, [location.key, showStatusPage, switchToSignIn]);
 
   if (showStatusPage) {
       const message = encodedMessage ? decodeURIComponent(encodedMessage) : undefined;

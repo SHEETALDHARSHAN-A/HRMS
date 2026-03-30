@@ -14,6 +14,10 @@ export const EXCLUDED_PATHS: string[] = [
   // Interview public endpoints
   '/interview/join',
   '/interview/thank-you',
+  '/interview/coding',
+  '/coding/question',
+  '/coding/submit',
+  '/coding/submission/',
 
   // Public job/career endpoints
   '/job-post/active',
@@ -28,6 +32,9 @@ export const EXCLUDED_PATHS: string[] = [
   // Full /api/v1 prefixed variants
   '/api/v1/auth/verify-otp',
   '/api/v1/auth/check-email-status',
+  '/api/v1/coding/question',
+  '/api/v1/coding/submit',
+  '/api/v1/coding/submission/',
   '/api/v1/job-post/active',
   '/api/v1/job-post/public/job/',
   '/api/v1/job-post/public/search-suggestions',

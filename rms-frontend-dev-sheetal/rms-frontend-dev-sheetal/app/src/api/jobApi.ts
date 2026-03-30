@@ -45,9 +45,7 @@ const extractApiErrorMessage = (err: unknown): string => {
 
    
   // Non-response (network / timeout / other)
-  // @ts-ignore
-  
- const networkMessage = (maybeAxios && maybeAxios.message) || String(err);
+   const networkMessage = (typeof maybeAxios?.message === 'string' ? maybeAxios.message : String(err));
   console.error(`[API] Network/Client Error: ${networkMessage}`, err); // <- ADDED LOG
   return networkMessage;
 };
@@ -100,7 +98,21 @@ export const uploadJobJD = async (file: File, options?: { onUploadProgress?: (p:
     // Ensure a 401 triggers the global auth flow so the session-ended
     // confirmation modal is shown (covers edge cases where interceptors
     // might have been bypassed).
-    if (success) return { success: true, data: response.data, status: response.status };
+    if (success) {
+      const apiBody = response.data;
+      if (apiBody && typeof apiBody === 'object' && apiBody.success === false) {
+        const message =
+          (typeof apiBody.message === 'string' && apiBody.message) ||
+          (Array.isArray(apiBody.errors) && apiBody.errors.length > 0 ? String(apiBody.errors[0]) : '') ||
+          'Upload failed';
+        return {
+          success: false,
+          error: message,
+          status: typeof apiBody.status_code === 'number' ? apiBody.status_code : response.status,
+        };
+      }
+      return { success: true, data: apiBody, status: response.status };
+    }
 
     // If the error indicates unauthorized, dispatch the global auth-error
     // event so `AuthErrorHandler` shows the login/session-ended modal.
@@ -114,7 +126,7 @@ export const uploadJobJD = async (file: File, options?: { onUploadProgress?: (p:
           }
         }));
       }
-    } catch (e) {
+    } catch {
       // swallow - best-effort only
     }
 

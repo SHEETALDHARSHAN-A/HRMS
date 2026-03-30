@@ -1,6 +1,6 @@
 // app/src/components/common/ResumeUploadZone.tsx
 import { useState } from 'react';
-import { FileUp, CheckCircle, UploadCloud } from 'lucide-react';
+import { CheckCircle, UploadCloud } from 'lucide-react';
 import FileUpload from './FileUpload'; // This is your existing logic wrapper
 import clsx from 'clsx';
 

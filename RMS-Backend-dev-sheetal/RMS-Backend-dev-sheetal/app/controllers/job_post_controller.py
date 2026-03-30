@@ -461,6 +461,20 @@ async def get_my_agent_jobs_controller(request: Request) -> StandardResponse:
                         "interview_mode": getattr(config, 'interview_mode', None) or getattr(config, 'interviewMode', None) or 'agent',
                         "interview_time": getattr(config, 'interview_time', None) or getattr(config, 'interviewTime', None),
                         "interviewer_id": getattr(config, 'interviewer_id', None) or getattr(config, 'interviewerId', None),
+                        # Coding challenge fields
+                        "codingEnabled": bool(getattr(config, 'coding_enabled', False)),
+                        "codingQuestionMode": getattr(config, 'coding_question_mode', 'ai') or 'ai',
+                        "codingDifficulty": getattr(config, 'coding_difficulty', 'medium') or 'medium',
+                        "codingLanguages": getattr(config, 'coding_languages', None) or ['python'],
+                        "providedCodingQuestion": getattr(config, 'provided_coding_question', None),
+                        "codingTestCaseMode": getattr(config, 'coding_test_case_mode', 'provided') or 'provided',
+                        "codingTestCases": getattr(config, 'coding_test_cases', None) or [],
+                        "codingStarterCode": getattr(config, 'coding_starter_code', None) or {},
+                        "mcqEnabled": bool(getattr(config, 'mcq_enabled', False)),
+                        "mcqQuestionMode": getattr(config, 'mcq_question_mode', 'provided') or 'provided',
+                        "mcqDifficulty": getattr(config, 'mcq_difficulty', 'medium') or 'medium',
+                        "mcqQuestions": getattr(config, 'mcq_questions', None) or [],
+                        "mcqPassingScore": getattr(config, 'mcq_passing_score', 60),
                     } for config in job_orms[i].agent_configs
                 ]
 

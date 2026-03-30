@@ -18,6 +18,7 @@ from app.schemas.scheduling_interview_request import SchedulingInterviewRequest
 from app.db.repository.scheduling_repository import (
     get_candidate_details_for_scheduling,
     check_existing_schedules,
+    resolve_round_instance_id_for_schedule,
     get_round_name_by_id,      # New import
     create_schedules_batch,
     get_job_title_by_id,
@@ -46,13 +47,18 @@ class Scheduling:
         profile_ids = request.profile_id
        
         # 1. Check for existing schedules and filter list
-        already_scheduled = await check_existing_schedules(self.db, job_id, profile_ids)
+        already_scheduled = await check_existing_schedules(
+            self.db,
+            job_id,
+            profile_ids,
+            requested_round_id=request.round_id,
+        )
         profiles_to_schedule = [p for p in profile_ids if p not in already_scheduled]
        
         if not profiles_to_schedule and already_scheduled:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="All provided candidate profiles are already scheduled for this job."
+                detail="All provided candidate profiles are already scheduled for this round."
             )
            
         # 2. Get necessary details for the candidates from the 'users' table
@@ -160,7 +166,16 @@ class Scheduling:
  
             # Generate deterministic token (room ID)
             room_id = uuid.uuid4()
-            interview_link = f"{self.INTERVIEW_LINK_BASE}"
+            base_url = str(self.INTERVIEW_LINK_BASE or "").rstrip("/")
+            interview_link = f"{base_url}/interview/join?token={room_id}"
+
+            # Resolve scheduling.round_id as interview_rounds.id for this candidate.
+            schedule_round_id = await resolve_round_instance_id_for_schedule(
+                self.db,
+                job_id=job_id,
+                profile_id=profile_id,
+                requested_round_id=request.round_id,
+            )
              
             # --- NEW: Template selection and rendering ---
             # Build context used for rendering templates (keys match backend defaults)
@@ -251,7 +266,7 @@ class Scheduling:
                 "interviewer_id": request.interviewer_id or None,
                 "scheduled_datetime": interview_datetime_utc,
                 "status": "scheduled",
-                "round_id": request.round_id,
+                "round_id": schedule_round_id,
                 "email_sent": email_sent_status,
                 "phone_number": candidate.get("phone_number") or None,
                 "interview_type": request.interview_type or "Agent_interview",

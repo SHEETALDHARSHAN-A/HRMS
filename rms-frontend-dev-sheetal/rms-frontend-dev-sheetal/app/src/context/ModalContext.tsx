@@ -4,7 +4,7 @@ import Toast from "../components/common/Toast";
 import ConfirmModal from '../components/common/ConfirmModal';
 
 // --- Toast Types ---
-type ToastType = 'success' | 'error' | 'info';
+type ToastType = 'success' | 'error' | 'info' | 'warning';
 interface ToastMessage {
   id: string;
   message: string;

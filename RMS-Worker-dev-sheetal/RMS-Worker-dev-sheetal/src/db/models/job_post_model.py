@@ -34,25 +34,24 @@ class JobDetails(Base):
     job_title = Column(String, nullable=False)
     minimum_experience = Column(Integer)
     maximum_experience = Column(Integer)
+    minimum_salary = Column(Integer)
+    maximum_salary = Column(Integer)
     rounds_count = Column(Integer)
     work_mode = Column(String, doc="office, remote, wfh")
     is_active = Column(Boolean, default=True)
-    role_fit = Column(Integer)
-    location_fit = Column(Integer)
-    potential_fit = Column(Integer)
- 
-    interview_type = Column(String)
     total_candidates = Column(Integer, default=0)
     shortlisted_count = Column(Integer, default=0)
     under_review_count = Column(Integer, default=0)
     rejected_count = Column(Integer, default=0)
     no_of_openings = Column(Integer, default=1)
     active_till = Column(DateTime(timezone=True))
-    is_agent_interview = Column(Boolean, default=False)
- 
+
     created_at = Column(TIMESTAMP(timezone=True))
     updated_at = Column(TIMESTAMP(timezone=True))
     posted_date = Column(TIMESTAMP(timezone=True))
+    career_activation_mode = Column(String, default='manual', nullable=False)
+    career_activation_days = Column(Integer, default=30)
+    career_shortlist_threshold = Column(Integer, default=0)
    
  
     descriptions = relationship("JobDescription", back_populates="job")

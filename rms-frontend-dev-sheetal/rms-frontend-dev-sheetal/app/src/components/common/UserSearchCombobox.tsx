@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { searchUsers, getAdminById } from '../../api/adminApi.ts';
 import type { User } from '../../types/auth';
 import { Loader2, Search, User as UserIcon, X } from 'lucide-react';

@@ -3,7 +3,7 @@ import clsx from "clsx";
 
 interface ToastProps {
   message: string;
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'info' | 'warning';
 }
 
 const Toast: FC<ToastProps> = ({ message, type }) => {
@@ -13,6 +13,7 @@ const Toast: FC<ToastProps> = ({ message, type }) => {
     success: "bg-green-600",
     error: "bg-red-600",
     info: "bg-blue-600",
+    warning: "bg-amber-600",
   };
 
   const Icon = () => {
@@ -23,6 +24,8 @@ const Toast: FC<ToastProps> = ({ message, type }) => {
         return <span role="img" aria-label="error">❌</span>;
       case "info":
         return <span role="img" aria-label="info">ℹ️</span>;
+      case "warning":
+        return <span role="img" aria-label="warning">⚠️</span>;
       default:
         return null;
     }

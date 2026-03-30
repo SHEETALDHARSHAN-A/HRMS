@@ -293,7 +293,7 @@ const CareerPage: React.FC = () => {
   return (
     <PublicLayout
         bannerTitle="Current Career Opportunities"
-        bannerSubtitle="Find your next role with PRAYAG.AI"
+        bannerSubtitle="Find your next role with Our Company"
         showHeroContent={true} 
     >
       <style>{`

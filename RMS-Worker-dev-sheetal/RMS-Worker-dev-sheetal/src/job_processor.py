@@ -100,9 +100,12 @@ class JobProcessor:
         try:
             try:
                 # Execute Core Processing Logic
-                await self.process_job(task_id)
-                
-                print(f"[STATUS] Task {task_id} completed successfully")
+                processed = await self.process_job(task_id)
+
+                if processed:
+                    print(f"[STATUS] Task {task_id} completed successfully")
+                else:
+                    print(f"[STATUS] Task {task_id} skipped (not processed)")
                 return
 
             except Exception as e:
@@ -180,32 +183,33 @@ class JobProcessor:
         # Try to acquire lock for the job
         if not await self.acquire_lock(redis_client, task_id):
             print(f"Could not acquire lock for job {task_id}, skipping...")
-            return
+            return False
 
         try:
             # NOTE: All synchronous redis calls here must now be awaited
             job = await redis_client.hgetall(f"job:{task_id}")
             if not job:
                 print(f"Job {task_id} not found, skipping...")
-                return
+                return False
             
             # Validate process_type key existence (Edge case)
             if "process_type" not in job:
                 print(f"Job {task_id} missing 'process_type', skipping...")
-                return
+                return False
             
             processor_type = job["process_type"]
             print("===============process_type :",processor_type)
             if not processor_type:
                 print(f"Job {task_id} does not have a processor_type, skipping...")
-                return
+                return False
             
             processor = self.processors.get(JobProcessorType(processor_type), "")
             print("=============processor :",processor_type) 
 
             if not processor:
                 raise Exception(f"Not implemented :{processor_type}")
-            return await processor.invoke(job)
+            await processor.invoke(job)
+            return True
           
         except Exception as e:
             # Re-raise to trigger the retry/failure logic in the wrapper.

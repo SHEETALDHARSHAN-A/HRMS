@@ -55,10 +55,11 @@
 // }
 
 
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
+import { Menu, X } from 'lucide-react';
 import { Outlet } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 import Sidebar from "./Sidebar";
-import Header from "./Header";
 import TopBanner from "../common/TopBanner";
 
 interface LayoutProps {
@@ -76,7 +77,7 @@ interface LayoutProps {
 
 export default function Layout({
   children,
-  searchPlaceholder,
+  searchPlaceholder: _searchPlaceholder,
   bannerTitle,
   bannerSubtitle,
   bannerActionButton,
@@ -87,15 +88,30 @@ export default function Layout({
   onTabChange,
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
-    <div className="flex w-full min-h-screen items-stretch">
+    <div
+      className="flex min-h-svh w-full bg-background text-foreground"
+      style={
+        {
+          "--sidebar-width": "16rem",
+          "--header-height": "3rem",
+        } as CSSProperties
+      }
+    >
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex flex-col flex-1 min-h-screen">
-        <Header
-          searchPlaceholder={searchPlaceholder}
-          onToggleSidebar={() => setSidebarOpen(prev => !prev)}
-          sidebarOpen={sidebarOpen}
-        />
+      <div className="flex min-h-svh flex-1 flex-col">
+        <div className="flex h-12 items-center border-b bg-background px-3 lg:hidden">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setSidebarOpen((prev) => !prev)}
+            aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+          >
+            {sidebarOpen ? <X className="size-4" /> : <Menu className="size-4" />}
+          </Button>
+        </div>
         
         {(bannerTitle && bannerSubtitle) && (
             <TopBanner 
@@ -111,7 +127,7 @@ export default function Layout({
         )}
         
         <main
-          className="flex-1 overflow-y-auto layout-bg"
+          className="flex-1 overflow-y-auto bg-muted/30"
           style={{
             padding: "var(--page-padding-y) var(--page-padding-x)", 
             paddingTop: "var(--page-padding-y)",

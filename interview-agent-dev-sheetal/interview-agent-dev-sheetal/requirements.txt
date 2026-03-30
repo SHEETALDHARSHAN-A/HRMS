@@ -1,0 +1,14 @@
+langfuse==3.9.3
+pydantic==2.12.3
+pydantic-settings==2.11.0
+python-dotenv==1.2.1
+SQLAlchemy==2.0.44
+psycopg2-binary==2.9.11
+livekit==1.0.18
+livekit-agents==1.2.18
+livekit-api==1.0.7
+livekit-protocol==1.1.0
+livekit-plugins-deepgram==1.2.18
+livekit-plugins-elevenlabs==1.2.18
+livekit-plugins-groq==1.2.18
+livekit-plugins-silero==1.2.18

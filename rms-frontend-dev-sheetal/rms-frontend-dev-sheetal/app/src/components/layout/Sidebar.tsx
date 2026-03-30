@@ -1,406 +1,314 @@
-// import { Briefcase, LayoutDashboard, FileText, BarChart, MessageCircle, Users, Headset, UploadCloud, Settings, X } from "lucide-react";
-// import { NavLink } from "react-router-dom";
-// import logo from "../../assets/logo.svg";
-// import { useUser } from "../../context/UserContext";
-// import type { UserRole } from "../router/ProtectedRoute"; 
+import {
+  BarChart3,
+  BadgeCheck,
+  Bell,
+  Briefcase,
+  ChevronsUpDown,
+  CreditCard,
+  FileText,
+  Headset,
+  LayoutDashboard,
+  LogOut,
+  MessageCircle,
+  Search,
+  Settings,
+  UploadCloud,
+  Users,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
+import logo from '@/assets/rms-mark.svg';
+import { useUser } from '../../context/UserContext';
+import type { UserRole } from '../router/ProtectedRoute';
+import { cn } from '@/lib/utils';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Separator } from '@/components/ui/separator';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
-// const ALL_ADMIN_ROLES: UserRole[] = ["ADMIN", "SUPER_ADMIN"];
-// const ALL_ROLES: UserRole[] = [...ALL_ADMIN_ROLES, "CANDIDATE"];
-// const navItems = [
-// 	{ label: "Dashboard", icon: LayoutDashboard, path: "/dashboard", roles: ALL_ADMIN_ROLES },
-// 	{ label: "Job Posts", icon: Briefcase, path: "/jobs", roles: ALL_ADMIN_ROLES },
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
 
-// 	{ label: "Career Page", icon: FileText, path: "/career-page", roles: ALL_ROLES },
+interface SidebarNavItem {
+  label: string;
+  icon: LucideIcon;
+  path: string;
+  roles: UserRole[];
+  section: 'main' | 'documents' | 'secondary';
+}
 
-//     // Other Admin/SuperAdmin Pages
-// 	{ label: "Control Hub", icon: UploadCloud, path: "/control-hub", roles: ALL_ADMIN_ROLES },
-// 	{ label: "Job Recruitment", icon: BarChart, path: "/job-recruitment", roles: ALL_ADMIN_ROLES },
-// 	{ label: "Interview Results", icon: MessageCircle, path: "/interview-results", roles: ALL_ADMIN_ROLES },
-// 	{ label: "Onboarding", icon: Users, path: "/onboarding", roles: ALL_ADMIN_ROLES },
-// 	{ label: "Interview Agent", icon: Headset, path: "/interview-agent", roles: ALL_ADMIN_ROLES },
-// 	{ label: "Settings", icon: Settings, path: "/settings", roles: ALL_ADMIN_ROLES }, 
-// ];
+const ALL_ADMIN_ROLES: UserRole[] = ['ADMIN', 'SUPER_ADMIN', 'HR'];
+const ALL_ROLES: UserRole[] = [...ALL_ADMIN_ROLES, 'CANDIDATE'];
 
-// export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
-//     const { user } = useUser();
-//     const userRole = user?.roles;
-
-//     const filteredNavItems = navItems.filter(item => {
-//         if (!userRole) return false;
-
-//         const rolesToCheck = Array.isArray(userRole) ? userRole : [userRole];
-
-//         // Super Admin sees every link defined above
-//         if (rolesToCheck.includes("SUPER_ADMIN")) return true;
-
-//         // Check if the user's role is specifically included in the item's allowed roles
-//         return rolesToCheck.some(role => item.roles.includes(role));
-//     });
-
-//     // Separate the "Settings" tab
-//     const settingsTab = navItems.find(item => item.label === "Settings");
-
-//     return (
-//         <>
-//         {/* Desktop / large screens */}
-//         <aside
-//             className="hidden lg:flex flex-col bg-white border-r border-gray-100 shadow-xl shadow-gray-50/10 z-20"
-//             style={{
-//                 width: "var(--sidebar-width)",
-//                 minWidth: "var(--sidebar-width)",
-//                 height: "100vh",
-//                 position: "sticky",
-//                 top: 0,
-//             }}
-//         >
-//             {/* Sidebar Header */}
-//             <div className="p-6 pb-8 h-16 flex items-center">
-//                 <img src={logo} alt="PRAYAG.AI Logo" className="w-full max-w-[200px] h-auto object-contain" />
-//             </div>
-
-//             {/* Sidebar Navigation */}
-//             <nav className="flex-1 flex flex-col gap-2 px-4 pt-4">
-//                 {/* Render all navigation items except "Settings" */}
-//                 {filteredNavItems
-//                     .filter(item => item.label !== "Settings")
-//                     .map(({ label, icon: Icon, path }) => (
-//                         <NavLink
-//                             key={label}
-//                             to={path}
-//                             className={({ isActive }) => {
-//                                 let navLinkClasses = "flex items-center gap-3 w-full px-4 py-3 rounded-md font-medium";
-//                                 if (isActive) {
-//                                     navLinkClasses += " bg-[var(--color-primary-500)] text-white shadow-md";
-//                                 } else {
-//                                     navLinkClasses += " text-gray-700 hover:bg-gray-100";
-//                                 }
-//                                 return navLinkClasses;
-//                             }}
-//                             style={({ isActive }) => ({
-//                                 color: isActive ? 'white' : 'var(--color-primary-500)',
-//                             })}
-//                         >
-//                             <Icon size={16} />
-//                             {label}
-//                         </NavLink>
-//                     ))}
-//             </nav>
-
-//             {/* Render the "Settings" tab at the bottom */}
-//             {settingsTab && (
-//                 <div className="px-4 pb-4">
-//                     <NavLink
-//                         to={settingsTab.path}
-//                         className={({ isActive }) => {
-//                             let navLinkClasses = "flex items-center gap-3 w-full px-4 py-3 rounded-md font-medium";
-//                             if (isActive) {
-//                                 navLinkClasses += " bg-[var(--color-primary-500)] text-white shadow-md";
-//                             } else {
-//                                 navLinkClasses += " text-gray-700 hover:bg-gray-100";
-//                             }
-//                             return navLinkClasses;
-//                         }}
-//                         style={({ isActive }) => ({
-//                             color: isActive ? 'white' : 'var(--color-primary-500)',
-//                         })}
-//                     >
-//                         <settingsTab.icon size={16} />
-//                         {settingsTab.label}
-//                     </NavLink>
-//                 </div>
-//             )}
-//         </aside>
-
-//         {/* Mobile slide-over */}
-//         <div className={`fixed inset-0 z-40 lg:hidden ${isOpen ? '' : 'pointer-events-none'}`} aria-hidden={!isOpen}>
-//           {/* Backdrop */}
-//           <div
-//             className={`absolute inset-0 bg-black/40 transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0'}`}
-//             onClick={() => onClose && onClose()}
-//           />
-
-//           <div className={`absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl transform transition-transform ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-//             <div className="p-4 flex items-center justify-between">
-//               <img src={logo} alt="PRAYAG.AI Logo" className="w-36 h-auto object-contain" />
-//               <button onClick={() => onClose && onClose()} aria-label="Close menu" className="p-2 rounded-md hover:bg-gray-100">
-//                 <X size={18} />
-//               </button>
-//             </div>
-
-//             <nav className="flex-1 flex flex-col gap-2 px-4 pt-2">
-//                 {filteredNavItems
-//                     .filter(item => item.label !== "Settings")
-//                     .map(({ label, icon: Icon, path }) => (
-//                         <NavLink
-//                             key={label}
-//                             to={path}
-//                             onClick={() => onClose && onClose()}
-//                             className={({ isActive }) => {
-//                                 let navLinkClasses = "flex items-center gap-3 w-full px-4 py-3 rounded-md font-medium";
-//                                 if (isActive) {
-//                                     navLinkClasses += " bg-[var(--color-primary-500)] text-white shadow-md";
-//                                 } else {
-//                                     navLinkClasses += " text-gray-700 hover:bg-gray-100";
-//                                 }
-//                                 return navLinkClasses;
-//                             }}
-//                             style={({ isActive }) => ({
-//                                 color: isActive ? 'white' : 'var(--color-primary-500)',
-//                             })}
-//                         >
-//                             <Icon size={16} />
-//                             {label}
-//                         </NavLink>
-//                     ))}
-//             </nav>
-
-//             {settingsTab && (
-//               <div className="px-4 pb-4">
-//                 <NavLink
-//                     to={settingsTab.path}
-//                     onClick={() => onClose && onClose()}
-//                     className={({ isActive }) => {
-//                         let navLinkClasses = "flex items-center gap-3 w-full px-4 py-3 rounded-md font-medium";
-//                         if (isActive) {
-//                             navLinkClasses += " bg-[var(--color-primary-500)] text-white shadow-md";
-//                         } else {
-//                             navLinkClasses += " text-gray-700 hover:bg-gray-100";
-//                         }
-//                         return navLinkClasses;
-//                     }}
-//                     style={({ isActive }) => ({
-//                         color: isActive ? 'white' : 'var(--color-primary-500)',
-//                     })}
-//                 >
-//                     <settingsTab.icon size={16} />
-//                     {settingsTab.label}
-//                 </NavLink>
-//               </div>
-//             )}
-
-//           </div>
-//         </div>
-//         </>
-//     );
-// }
-
-
-import React from 'react';
-import { Briefcase, LayoutDashboard, FileText, BarChart, MessageCircle, Users, Headset, UploadCloud, Settings, X } from "lucide-react";
-import { NavLink } from "react-router-dom";
-import logo from "../../assets/logo.svg";
-import { useUser } from "../../context/UserContext";
-import type { UserRole } from "../router/ProtectedRoute"; 
-
-// Include HR as an admin-level role so HR users see admin sidebar items
-const ALL_ADMIN_ROLES: UserRole[] = ["ADMIN", "SUPER_ADMIN", "HR"];
-const ALL_ROLES: UserRole[] = [...ALL_ADMIN_ROLES, "CANDIDATE"];
-const navItems = [
-	{ label: "Dashboard", icon: LayoutDashboard, path: "/dashboard", roles: ALL_ADMIN_ROLES },
-	{ label: "My Job Posts", icon: Briefcase, path: "/jobs/my-jobs", roles: ALL_ADMIN_ROLES },
-	{ label: "All Job Posts", icon: Users, path: "/jobs/all-jobs", roles: ALL_ADMIN_ROLES },
-	{ label: "Career Page", icon: FileText, path: "/career-page", roles: ALL_ROLES },
-
-    // Other Admin/SuperAdmin Pages
-	{ label: "Control Hub", icon: UploadCloud, path: "/control-hub", roles: ALL_ADMIN_ROLES },
-	{ label: "Job Recruitment", icon: BarChart, path: "/job-recruitment", roles: ALL_ADMIN_ROLES },
-	{ label: "Interview Results", icon: MessageCircle, path: "/interview-results", roles: ALL_ADMIN_ROLES },
-	{ label: "Onboarding", icon: Users, path: "/onboarding", roles: ALL_ADMIN_ROLES },
-	{ label: "Interview Agent", icon: Headset, path: "/interview-agent", roles: ALL_ADMIN_ROLES },
-	{ label: "Settings", icon: Settings, path: "/settings", roles: ALL_ADMIN_ROLES }, 
+const navItems: SidebarNavItem[] = [
+  { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ALL_ADMIN_ROLES, section: 'main' },
+  { label: 'My Job Posts', icon: Briefcase, path: '/jobs/my-jobs', roles: ALL_ADMIN_ROLES, section: 'main' },
+  { label: 'Job Posts by others', icon: Users, path: '/jobs/all-jobs', roles: ALL_ADMIN_ROLES, section: 'main' },
+  { label: 'Job Recruitment', icon: BarChart3, path: '/job-recruitment', roles: ALL_ADMIN_ROLES, section: 'main' },
+  { label: 'Interview Results', icon: MessageCircle, path: '/interview-results', roles: ALL_ADMIN_ROLES, section: 'main' },
+  { label: 'Interview Agent', icon: Headset, path: '/interview-agent', roles: ALL_ADMIN_ROLES, section: 'main' },
+  { label: 'Onboarding', icon: Users, path: '/onboarding', roles: ALL_ADMIN_ROLES, section: 'main' },
+  { label: 'Career Page', icon: FileText, path: '/career-page', roles: ALL_ROLES, section: 'documents' },
+  { label: 'Control Hub', icon: UploadCloud, path: '/control-hub', roles: ALL_ADMIN_ROLES, section: 'documents' },
+  { label: 'Settings', icon: Settings, path: '/settings', roles: ALL_ADMIN_ROLES, section: 'secondary' },
+  { label: 'Search Jobs', icon: Search, path: '/jobs/all-jobs', roles: ALL_ADMIN_ROLES, section: 'secondary' },
 ];
 
-export default function Sidebar({ isOpen, onClose }: { isOpen?: boolean; onClose?: () => void }) {
-        const { user } = useUser();
-        const mobileWrapperRef = React.useRef<HTMLDivElement | null>(null);
+const toRoleArray = (roleValue: unknown): UserRole[] => {
+  if (!roleValue) {
+    return [];
+  }
 
-        // Accessibility: when the mobile sidebar is closed, ensure no focusable element
-        // inside it remains focused while the container is aria-hidden. This prevents
-        // the browser warning about aria-hidden on an ancestor of a focused element.
-        React.useEffect(() => {
-            if (isOpen) return; // only act when closing
-            try {
-                const wrapper = mobileWrapperRef.current;
-                if (!wrapper) return;
-                const active = document.activeElement as HTMLElement | null;
-                if (active && wrapper.contains(active)) {
-                    // Move focus away: blur the focused element to avoid hidden-focus issue.
-                    active.blur();
-                    // Optionally, move focus to the document body so assistive tech has a valid target
-                    (document.body as HTMLElement).focus?.();
-                }
-            } catch (e) {
-                // Non-fatal — keep app working
-                // eslint-disable-next-line no-console
-                console.warn('Sidebar accessibility focus handler failed', e);
-            }
-        }, [isOpen]);
-    const userRole = user?.role;
+  if (Array.isArray(roleValue)) {
+    return roleValue.filter((role): role is UserRole => typeof role === 'string') as UserRole[];
+  }
 
-    const filteredNavItems = navItems.filter(item => {
-        if (!userRole) return false;
+  if (typeof roleValue === 'string') {
+    return [roleValue as UserRole];
+  }
 
-        const rolesToCheck = Array.isArray(userRole) ? userRole : [userRole];
+  return [];
+};
 
-        // Super Admin sees every link defined above
-        if (rolesToCheck.includes("SUPER_ADMIN")) return true;
+const getVisibleItems = (roleValue: unknown) => {
+  const rolesToCheck = toRoleArray(roleValue);
 
-        // Check if the user's role is specifically included in the item's allowed roles
-        return rolesToCheck.some(role => item.roles.includes(role));
-    });
+  if (rolesToCheck.length === 0) {
+    return [] as SidebarNavItem[];
+  }
 
-    // Separate the "Settings" tab - only show if user has the right role
-    const settingsTab = navItems.find(item => item.label === "Settings");
-    // For debugging: always show settings if user has any admin role
-    // Allow HR to access Settings as well
-    const shouldShowSettings = settingsTab && userRole && (
-        userRole === "SUPER_ADMIN" || 
-        userRole === "ADMIN" ||
-        userRole === "HR" || 
-        (Array.isArray(userRole) && (userRole.includes("SUPER_ADMIN") || userRole.includes("ADMIN") || userRole.includes("HR")))
-    );
+  if (rolesToCheck.includes('SUPER_ADMIN')) {
+    return navItems;
+  }
 
-    return (
-        <>
-        {/* Desktop / large screens */}
-        <aside
-            className="hidden lg:flex flex-col bg-white border-r border-gray-100 shadow-xl shadow-gray-50/10 z-20"
-            style={{
-                width: "var(--sidebar-width)",
-                minWidth: "var(--sidebar-width)",
-                height: "100vh",
-                position: "sticky",
-                top: 0,
-                paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 4rem)'
-            }}
+  return navItems.filter((item) => rolesToCheck.some((role) => item.roles.includes(role)));
+};
+
+const formatRoleLabel = (roleValue: unknown) => {
+  const firstRole = toRoleArray(roleValue)[0];
+  if (!firstRole) {
+    return 'Admin';
+  }
+
+  return firstRole
+    .toLowerCase()
+    .split('_')
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(' ');
+};
+
+const NavItems = ({
+  items,
+  closeSidebar,
+}: {
+  items: SidebarNavItem[];
+  closeSidebar?: () => void;
+}) => {
+  return (
+    <div className="space-y-1">
+      {items.map(({ label, icon: Icon, path }) => (
+        <NavLink
+          key={label}
+          to={path}
+          onClick={closeSidebar}
+          className={({ isActive }) =>
+            cn(
+              'group flex h-10 w-full items-center gap-2.5 rounded-md px-3 text-sm transition-colors',
+              isActive
+                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground'
+            )
+          }
         >
-            {/* Sidebar Header */}
-            <div className="p-6 pb-8 h-16 flex items-center">
-                <img src={logo} alt="PRAYAG.AI Logo" className="w-full max-w-[200px] h-auto object-contain" />
-            </div>
+          <Icon className="size-4" />
+          <span className="truncate">{label}</span>
+        </NavLink>
+      ))}
+    </div>
+  );
+};
 
-            {/* Sidebar Navigation */}
-            <nav className="flex-1 flex flex-col gap-2 px-4 pt-4">
-                {/* Render all navigation items except "Settings" */}
-                {filteredNavItems
-                    .filter(item => item.label !== "Settings")
-                    .map(({ label, icon: Icon, path }) => (
-                        <NavLink
-                            key={label}
-                            to={path}
-                            className={({ isActive }) => {
-                                let navLinkClasses = "flex items-center gap-3 w-full px-3 py-2 rounded-md font-medium";
-                                if (isActive) {
-                                    navLinkClasses += " bg-[var(--color-primary-500)] text-white shadow-md";
-                                } else {
-                                    navLinkClasses += " text-gray-700 hover:bg-gray-100";
-                                }
-                                return navLinkClasses;
-                            }}
-                            style={({ isActive }) => ({
-                                color: isActive ? 'white' : 'var(--color-primary-500)',
-                            })}
-                        >
-                            <Icon size={16} />
-                            {label}
-                        </NavLink>
-                    ))}
-            </nav>
+const SidebarBody = ({
+  items,
+  userName,
+  userEmail,
+  roleLabel,
+  onLogout,
+  closeSidebar,
+}: {
+  items: SidebarNavItem[];
+  userName: string;
+  userEmail: string;
+  roleLabel: string;
+  onLogout: () => Promise<void>;
+  closeSidebar?: () => void;
+}) => {
+  const mainItems = items.filter((item) => item.section === 'main');
+  const documentItems = items.filter((item) => item.section === 'documents');
+  const secondaryItems = items.filter((item) => item.section === 'secondary');
 
-            {/* Render the "Settings" tab at the bottom */}
-            {shouldShowSettings && settingsTab && (
-                <div className="px-4 mt-auto" style={{ paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))' }}>
-                    <NavLink
-                        to={settingsTab.path}
-                        className={({ isActive }) => {
-                            let navLinkClasses = "flex items-center gap-3 w-full px-3 py-2 rounded-md font-medium";
-                            if (isActive) {
-                                navLinkClasses += " bg-[var(--color-primary-500)] text-white shadow-md";
-                            } else {
-                                navLinkClasses += " text-gray-700 hover:bg-gray-100";
-                            }
-                            return navLinkClasses;
-                        }}
-                        style={({ isActive }) => ({
-                            color: isActive ? 'white' : 'var(--color-primary-500)',
-                        })}
-                    >
-                        <settingsTab.icon size={16} />
-                        {settingsTab.label}
-                    </NavLink>
-                </div>
-            )}
-        </aside>
+  const initials = userName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((token) => token.charAt(0))
+    .join('')
+    .toUpperCase() || 'US';
 
-        {/* Mobile slide-over */}
-    <div ref={mobileWrapperRef} className={`fixed inset-0 z-40 lg:hidden ${isOpen ? '' : 'pointer-events-none'}`} aria-hidden={!isOpen}>
-          {/* Backdrop */}
-          <div
-            className={`absolute inset-0 bg-black/40 transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0'}`}
-            onClick={() => onClose && onClose()}
-          />
+  const handleLogout = async () => {
+    await onLogout();
+    closeSidebar?.();
+  };
 
-          <div className={`absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl transform transition-transform ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-            <div className="p-4 flex items-center justify-between">
-              <img src={logo} alt="PRAYAG.AI Logo" className="w-36 h-auto object-contain" />
-              <button onClick={() => onClose && onClose()} aria-label="Close menu" className="p-2 rounded-md hover:bg-gray-100">
-                <X size={18} />
-              </button>
-            </div>
+  return (
+    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+      <div className="shrink-0 px-3 py-3">
+        <img src={logo} alt="RMS" className="h-8 w-8 object-contain" />
+      </div>
 
-            <nav className="flex-1 flex flex-col gap-2 px-4 pt-2">
-                {filteredNavItems
-                    .filter(item => item.label !== "Settings")
-                    .map(({ label, icon: Icon, path }) => (
-                        <NavLink
-                            key={label}
-                            to={path}
-                            onClick={() => onClose && onClose()}
-                            className={({ isActive }) => {
-                                let navLinkClasses = "flex items-center gap-3 w-full px-3 py-2 rounded-md font-medium";
-                                if (isActive) {
-                                    navLinkClasses += " bg-[var(--color-primary-500)] text-white shadow-md";
-                                } else {
-                                    navLinkClasses += " text-gray-700 hover:bg-gray-100";
-                                }
-                                return navLinkClasses;
-                            }}
-                            style={({ isActive }) => ({
-                                color: isActive ? 'white' : 'var(--color-primary-500)',
-                            })}
-                        >
-                            <Icon size={16} />
-                            {label}
-                        </NavLink>
-                    ))}
-            </nav>
+      <div className="flex-1 overflow-y-auto px-2 pb-2 pt-4">
 
-            {shouldShowSettings && settingsTab && (
-              <div className="px-4" style={{ paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))' }}>
-                <NavLink
-                    to={settingsTab.path}
-                    onClick={() => onClose && onClose()}
-                    className={({ isActive }) => {
-                        let navLinkClasses = "flex items-center gap-3 w-full px-3 py-2 rounded-md font-medium";
-                        if (isActive) {
-                            navLinkClasses += " bg-[var(--color-primary-500)] text-white shadow-md";
-                        } else {
-                            navLinkClasses += " text-gray-700 hover:bg-gray-100";
-                        }
-                        return navLinkClasses;
-                    }}
-                    style={({ isActive }) => ({
-                        color: isActive ? 'white' : 'var(--color-primary-500)',
-                    })}
-                >
-                    <settingsTab.icon size={16} />
-                    {settingsTab.label}
-                </NavLink>
-              </div>
-            )}
+        <NavItems items={mainItems} closeSidebar={closeSidebar} />
 
+        {documentItems.length > 0 && (
+          <div className="mt-6">
+            <p className="mb-1 px-2 text-xs text-sidebar-foreground/60">Documents</p>
+            <NavItems items={documentItems} closeSidebar={closeSidebar} />
           </div>
-        </div>
-        </>
-    );
+        )}
+
+        {secondaryItems.length > 0 && (
+          <div className="mt-6">
+            <NavItems items={secondaryItems} closeSidebar={closeSidebar} />
+          </div>
+        )}
+      </div>
+
+      <Separator className="my-2" />
+
+      <div className="p-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="group flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+            >
+              <Avatar className="h-8 w-8 rounded-lg">
+                <AvatarFallback className="rounded-lg bg-[#016BAE] text-white">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+              <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-semibold">{userName}</span>
+                <span className="truncate text-xs">{userEmail || roleLabel}</span>
+              </div>
+              <ChevronsUpDown className="ml-auto size-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
+            side={closeSidebar ? 'bottom' : 'right'}
+            align="end"
+            sideOffset={4}
+          >
+            <DropdownMenuLabel className="p-0 font-normal">
+              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+                <Avatar className="h-8 w-8 rounded-lg">
+                  <AvatarFallback className="rounded-lg bg-[#016BAE] text-white">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-semibold">{userName}</span>
+                  <span className="truncate text-xs">{userEmail || roleLabel}</span>
+                </div>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem>
+                <BadgeCheck className="mr-2 size-4" />
+                Account
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <CreditCard className="mr-2 size-4" />
+                Billing
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <Bell className="mr-2 size-4" />
+                Notifications
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleLogout}>
+              <LogOut className="mr-2 size-4" />
+              Log out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+};
+
+export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
+  const { user, logout } = useUser();
+  const visibleItems = getVisibleItems(user?.role);
+  const roleLabel = formatRoleLabel(user?.role);
+  const userName = user ? `${user.first_name} ${user.last_name}`.trim() : 'User';
+  const userEmail = user?.email ?? '';
+
+  return (
+    <>
+      <aside
+        className="hidden h-svh w-[var(--sidebar-width)] shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground lg:flex"
+        style={{ position: 'sticky', top: 0 }}
+      >
+        <SidebarBody
+          items={visibleItems}
+          userName={userName}
+          userEmail={userEmail}
+          roleLabel={roleLabel}
+          onLogout={logout}
+        />
+      </aside>
+
+      <Sheet
+        open={isOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            onClose?.();
+          }
+        }}
+      >
+        <SheetContent
+          side="left"
+          className="w-[var(--sidebar-width)] border-r bg-sidebar p-0 text-sidebar-foreground sm:max-w-[var(--sidebar-width)]"
+          showCloseButton
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Navigation</SheetTitle>
+          </SheetHeader>
+          <SidebarBody
+            items={visibleItems}
+            userName={userName}
+            userEmail={userEmail}
+            roleLabel={roleLabel}
+            onLogout={logout}
+            closeSidebar={onClose}
+          />
+        </SheetContent>
+      </Sheet>
+    </>
+  );
 }

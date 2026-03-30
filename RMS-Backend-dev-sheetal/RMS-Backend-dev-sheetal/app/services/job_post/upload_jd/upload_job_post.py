@@ -2,29 +2,39 @@
 
 import os
 import re
+import ast
 import json
 import base64
 import asyncio
 import hashlib
-import asyncio
 import traceback
 import redis.asyncio as redis
+
+try:
+    import fitz
+except Exception:
+    fitz = None
 
 from io import BytesIO
 from docx import Document
 from datetime import datetime
-from agents import Agent, Runner
+from agents import Agent, Runner, set_tracing_disabled
 
 from typing import Dict, Union, Any
 from pdf2image import convert_from_bytes
 from fastapi import UploadFile, File, HTTPException, status
  
 from app.config.app_config import AppConfig
-# removed unused imports: fitz and compute_json_hash
 from app.prompts.extract_jd_prompt import prompt_template
 from app.services.job_post.upload_jd.base import BaseUploadJobPost
  
 settings = AppConfig()
+
+try:
+    # Groq inference works via OpenAI-compatible API. Disable OpenAI tracing to avoid non-fatal 401 noise.
+    set_tracing_disabled(True)
+except Exception:
+    pass
  
 class UploadJobPost(BaseUploadJobPost):
     """
@@ -36,18 +46,24 @@ class UploadJobPost(BaseUploadJobPost):
         self.redis_store = redis_store
 
     def create_agent(self) -> Union[Agent, Dict]:
-        """Initializes and returns the LLM agent by setting the OPENAI_API_KEY environment variable."""
+        """Initializes and returns the LLM agent using Groq via OpenAI-compatible settings."""
         try:
-            os.environ['OPENAI_API_KEY'] = settings.openai_api_key
+            llm_api_key = settings.effective_groq_api_key
+            if not llm_api_key:
+                raise ValueError("Groq API key is not configured")
+
+            os.environ['OPENAI_API_KEY'] = llm_api_key
+            os.environ['OPENAI_BASE_URL'] = settings.groq_base_url
             return Agent(
                 name="JD Extractor",
+                model=settings.effective_groq_model,
                 instructions=prompt_template,
             )
         except Exception as e:
             error_str = str(e)
             if "api key" in error_str.lower() or "authentication" in error_str.lower() or "unauthorized" in error_str.lower():
                 return {"error": "LLM API key is invalid or unauthorized. Please check your credentials."}
-            return {"error": "we "}
+            return {"error": "We couldn’t initialize the extraction model. Please try again later."}
  
     def extract_text_from_docx(self, docx_bytes: bytes) -> str:
         """Extracts text content from a DOCX file."""
@@ -69,6 +85,125 @@ class UploadJobPost(BaseUploadJobPost):
 
         except Exception as e:
             return None
+
+    def extract_text_from_pdf(self, pdf_bytes: bytes) -> Union[str, None]:
+        """Extracts selectable text from a PDF using PyMuPDF."""
+        if fitz is None:
+            print("[WARN] PyMuPDF (fitz) is not available. Skipping direct PDF text extraction.")
+            return None
+
+        try:
+            with fitz.open(stream=pdf_bytes, filetype="pdf") as pdf_doc:
+                page_count = len(pdf_doc)
+                if page_count == 0:
+                    return None
+
+                pages_to_process = min(page_count, settings.max_pdf_pages)
+                extracted_chunks = []
+                for page_index in range(pages_to_process):
+                    page_text = pdf_doc[page_index].get_text("text")
+                    if page_text and page_text.strip():
+                        extracted_chunks.append(page_text.strip())
+
+            if extracted_chunks:
+                return "\n".join(extracted_chunks)
+
+            return None
+
+        except Exception as e:
+            print(f"[WARN] PDF text extraction failed with PyMuPDF: {e}")
+            return None
+
+    def _extract_first_json_object(self, raw_text: str) -> Union[str, None]:
+        """Extracts the first balanced JSON object from a noisy string."""
+        if not raw_text:
+            return None
+
+        start_index = raw_text.find("{")
+        while start_index != -1:
+            depth = 0
+            in_string = False
+            escape = False
+
+            for idx in range(start_index, len(raw_text)):
+                ch = raw_text[idx]
+
+                if in_string:
+                    if escape:
+                        escape = False
+                    elif ch == "\\":
+                        escape = True
+                    elif ch == '"':
+                        in_string = False
+                    continue
+
+                if ch == '"':
+                    in_string = True
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return raw_text[start_index : idx + 1]
+
+            start_index = raw_text.find("{", start_index + 1)
+
+        return None
+
+    def _parse_agent_json_output(self, raw_output: str) -> Union[Dict, None]:
+        """Parses JSON from LLM output, tolerating code fences and minor formatting noise."""
+        if not raw_output:
+            return None
+
+        candidates = []
+
+        fenced_match = re.search(
+            r"```(?:jsonc?|)?\s*(.*?)```",
+            raw_output,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if fenced_match:
+            candidates.append(fenced_match.group(1).strip())
+
+        extracted_object = self._extract_first_json_object(raw_output)
+        if extracted_object:
+            candidates.append(extracted_object.strip())
+
+        candidates.append(raw_output.strip())
+
+        seen = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+
+            normalized_variants = [
+                candidate,
+                candidate.replace("“", '"').replace("”", '"').replace("’", "'").replace("‘", "'"),
+            ]
+
+            for variant in normalized_variants:
+                cleaned = re.sub(r",\s*([}\]])", r"\1", variant)
+
+                try:
+                    parsed = json.loads(cleaned)
+                    if isinstance(parsed, dict):
+                        return parsed
+                except json.JSONDecodeError:
+                    pass
+
+                literal_candidate = re.sub(r"\btrue\b", "True", cleaned, flags=re.IGNORECASE)
+                literal_candidate = re.sub(r"\bfalse\b", "False", literal_candidate, flags=re.IGNORECASE)
+                literal_candidate = re.sub(r"\bnull\b", "None", literal_candidate, flags=re.IGNORECASE)
+
+                try:
+                    parsed_literal = ast.literal_eval(literal_candidate)
+                    if isinstance(parsed_literal, dict):
+                        return parsed_literal
+                except (ValueError, SyntaxError):
+                    pass
+
+        return None
  
     async def extract_job_details_with_text(self, text_content: str) -> Dict:
         """Processes text content with the LLM agent."""
@@ -80,16 +215,15 @@ class UploadJobPost(BaseUploadJobPost):
             if not result.final_output:
                 return { "error": "We couldn’t extract job details from the text content. Please check the file and try again."}
 
-            json_match = re.search(r'```(?:jsonc?|)\n(.*)```', result.final_output, re.DOTALL)
+            parsed_data = self._parse_agent_json_output(result.final_output)
+            if isinstance(parsed_data, dict):
+                return parsed_data
 
-            json_string = json_match.group(1).strip() if json_match else result.final_output.strip()
-
-            try:
-
-                return json.loads(json_string)
-
-            except json.JSONDecodeError as e:
-                return {"error": "Failed to parse extracted job details."}
+            print(
+                "[WARN] Unable to parse JD text extraction output as JSON. "
+                f"Output preview: {result.final_output[:500]}"
+            )
+            return {"error": "Failed to parse extracted job details."}
 
         except Exception as e:
 
@@ -110,7 +244,35 @@ class UploadJobPost(BaseUploadJobPost):
         """Converts a PDF to images and processes with the LLM agent."""
         print(f"[INFO] Processing PDF. Converting to images for LLM analysis.")
         try:
-            images = convert_from_bytes(file_content, poppler_path=r"C:\Users\gomathishanmugam\Downloads\poppler-25.07.0\Library\bin", fmt="jpeg", dpi=200)
+            configured_poppler_path = (
+                getattr(settings, "poppler_path", None)
+                or os.getenv("POPPLER_PATH")
+                or os.getenv("poppler_path")
+                or os.getenv("POPLER_PATH")
+                or os.getenv("popler_path")
+            )
+
+            if configured_poppler_path:
+                configured_poppler_path = str(configured_poppler_path).strip().strip('"').strip("'")
+            if configured_poppler_path and configured_poppler_path.lower() in {"none", "null"}:
+                configured_poppler_path = None
+
+            if configured_poppler_path:
+                try:
+                    images = convert_from_bytes(
+                        file_content,
+                        poppler_path=configured_poppler_path,
+                        fmt="jpeg",
+                        dpi=200,
+                    )
+                except Exception as poppler_err:
+                    print(
+                        "[WARN] Poppler conversion with configured path failed "
+                        f"('{configured_poppler_path}'): {poppler_err}. Retrying using system PATH."
+                    )
+                    images = convert_from_bytes(file_content, fmt="jpeg", dpi=200)
+            else:
+                images = convert_from_bytes(file_content, fmt="jpeg", dpi=200)
         except Exception as e:
             print(f"[ERROR] PDF to image conversion failed: {e}")
             return {"error": "We couldn’t read the uploaded PDF. Please ensure the file is not corrupted and try again."}
@@ -127,7 +289,12 @@ class UploadJobPost(BaseUploadJobPost):
         agent = self.create_agent()
 
         if isinstance(agent, dict) and 'error' in agent:
-            return {"error": "We’re having trouble setting up the extraction service. Please try again later."}
+            return {
+                "error": agent.get(
+                    "error",
+                    "We’re having trouble setting up the extraction service. Please try again later.",
+                )
+            }
 
         all_results = []
 
@@ -153,15 +320,13 @@ class UploadJobPost(BaseUploadJobPost):
                     print(f"[WARN] Agent returned empty output for PDF page {i+1}. Skipping.")
                     continue
 
-                json_match = re.search(r'```(?:jsonc?|)\n(.*)```', result.final_output, re.DOTALL)
-
-                json_string = json_match.group(1).strip() if json_match else result.final_output.strip()
-
-                parsed_data = json.loads(json_string)
+                parsed_data = self._parse_agent_json_output(result.final_output)
 
                 if isinstance(parsed_data, dict):
-
                     all_results.append(parsed_data)
+                else:
+                    print(f"[WARN] Agent output for page {i+1} was not valid JSON. Skipping.")
+                    continue
 
             except asyncio.TimeoutError:
                 print(f"[WARN] Page {i+1} processing timed out.")
@@ -178,7 +343,8 @@ class UploadJobPost(BaseUploadJobPost):
                 if "api key" in error_str.lower() or "authentication" in error_str.lower() or "unauthorized" in error_str.lower():
                     return {"error": "There was an issue connecting to the extraction service. Please try again shortly."}
 
-                return {"error": "Something went wrong while processing the file. Please try again later."}
+                # Continue processing remaining pages instead of failing the entire file on one page error.
+                continue
 
 
         if not all_results:
@@ -234,7 +400,7 @@ class UploadJobPost(BaseUploadJobPost):
             cached_data = await self.redis_store.hgetall(file_hash)
             if cached_data:
                 print(f"[INFO] Cache hit for hash '{file_hash}'.")
-                cached_content = cached_data.get("extracted_content")
+                cached_content = cached_data.get("extracted_content") or cached_data.get(b"extracted_content")
                 
                 if cached_content is not None:
                     # Safely decode if it's bytes, otherwise assume it's a string
@@ -252,7 +418,15 @@ class UploadJobPost(BaseUploadJobPost):
 
         print(f"[INFO] Cache miss for hash '{file_hash}'. Proceeding with LLM extraction.")
         
-        file_type = file.content_type
+        file_type = (file.content_type or "").lower()
+        file_name = (file.filename or "").lower()
+
+        # Some clients send octet-stream or empty content-type for regular uploads.
+        if file_type in {"", "application/octet-stream"}:
+            if file_name.endswith(".pdf"):
+                file_type = "application/pdf"
+            elif file_name.endswith(".docx"):
+                file_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
         job_details = None
  
@@ -274,15 +448,26 @@ class UploadJobPost(BaseUploadJobPost):
             if(len(file_content) > settings.max_file_size_pdf):
 
                 return {"error": "The uploaded PDF file exceeds the maximum allowed size of 10 MB. Please upload a smaller file."}
-            
-            job_details = await self.extract_job_details_with_agent_image(file_content)
+
+            text_content = self.extract_text_from_pdf(file_content)
+            if text_content:
+                print("[INFO] Extracted selectable text from PDF. Using text-based JD extraction path.")
+                job_details = await self.extract_job_details_with_text(text_content)
+            else:
+                print("[INFO] No selectable text found in PDF. Falling back to image-based extraction path.")
+                job_details = await self.extract_job_details_with_agent_image(file_content)
 
         else:
             print(f"[ERROR] Unsupported file type: {file_type}.")
             return {"error": "Unsupported file type. Please upload your job description as a PDF or DOCX file."}
  
-        if job_details and "error" in job_details:
-            return {"error": "We couldn’t process the job description right now. Please upload a clear and readable JD file (PDF or DOCX) and try again later."}
+        if isinstance(job_details, dict) and "error" in job_details:
+            return {
+                "error": job_details.get(
+                    "error",
+                    "We couldn’t process the job description right now. Please upload a clear and readable JD file (PDF or DOCX) and try again later.",
+                )
+            }
  
         if not job_details:
             print("[ERROR] Final job details extraction failed. Check the file content.")

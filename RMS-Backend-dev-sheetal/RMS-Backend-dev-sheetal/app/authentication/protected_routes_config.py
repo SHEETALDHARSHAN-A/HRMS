@@ -19,6 +19,10 @@ EXCLUDED_ROUTES = [
     # Public interview endpoints for candidates
     "/v1/interview/validate-token",
     "/v1/interview/verify-otp",
+    "/v1/interview/complete",
+    "/v1/coding/question",
+    "/v1/coding/submit",
+    "/v1/coding/submission/",
     "/v1/admins/complete-setup",
     "/v1/admins/complete-admin-setup",
     "/v1/admins/verify-name-update",
@@ -42,6 +46,10 @@ EXCLUDED_ROUTES = [
 
     "/api/v1/interview/validate-token",
     "/api/v1/interview/verify-otp",
+    "/api/v1/interview/complete",
+    "/api/v1/coding/question",
+    "/api/v1/coding/submit",
+    "/api/v1/coding/submission/",
     "/api/v1/admins/complete-setup",
     "/api/v1/admins/complete-admin-setup",
     "/api/v1/admins/verify-name-update",

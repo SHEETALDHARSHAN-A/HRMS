@@ -105,6 +105,7 @@ const CandidateListItem: React.FC<CandidateListItemProps> = ({
         shortlisted: 'bg-green-100 text-green-700 border-green-300',
         under_review: 'bg-yellow-100 text-yellow-700 border-yellow-300',
         rejected: 'bg-red-100 text-red-700 border-red-300',
+        interview_scheduled: 'bg-indigo-100 text-indigo-700 border-indigo-300',
     };
     const statusText = candidate.round_status.replace('_', ' ').split(' ').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
     const statusStyle = statusClasses[candidate.round_status];

@@ -46,6 +46,7 @@ async def test_schedule_candidate_all_emails_failed(monkeypatch):
     monkeypatch.setattr(service_mod, 'get_job_title_by_id', AsyncMock(return_value='J Title'))
     monkeypatch.setattr(service_mod, 'get_round_name_by_id', AsyncMock(return_value={'round_name': 'Round 1'}))
     monkeypatch.setattr(service_mod, 'get_next_round_details', AsyncMock(return_value={'round_name': 'Final'}))
+    monkeypatch.setattr(service_mod, 'resolve_round_instance_id_for_schedule', AsyncMock(return_value='resolved-round'))
     # fail send email
     monkeypatch.setattr(service_mod, 'send_interview_invite_email_async', AsyncMock(return_value=False))
     future_dt = datetime.now(timezone.utc) + timedelta(days=2)
@@ -66,8 +67,11 @@ async def test_schedule_candidate_success(monkeypatch):
     monkeypatch.setattr(service_mod, 'get_job_title_by_id', AsyncMock(return_value='J Title'))
     monkeypatch.setattr(service_mod, 'get_round_name_by_id', AsyncMock(return_value={'round_name': 'Round 1'}))
     monkeypatch.setattr(service_mod, 'get_next_round_details', AsyncMock(return_value={'round_name': 'Final'}))
-    monkeypatch.setattr(service_mod, 'send_interview_invite_email_async', AsyncMock(return_value=True))
-    monkeypatch.setattr(service_mod, 'create_schedules_batch', AsyncMock(return_value=['id1']))
+    monkeypatch.setattr(service_mod, 'resolve_round_instance_id_for_schedule', AsyncMock(return_value='resolved-round-id'))
+    send_email_mock = AsyncMock(return_value=True)
+    create_batch_mock = AsyncMock(return_value=['id1'])
+    monkeypatch.setattr(service_mod, 'send_interview_invite_email_async', send_email_mock)
+    monkeypatch.setattr(service_mod, 'create_schedules_batch', create_batch_mock)
     # Also patch EmailTemplateService to avoid rendering complexity
     monkeypatch.setattr(service_mod.EmailTemplateService, 'get_template', AsyncMock(return_value={'subject_template': 'S','body_template_html': '<p>B</p>'}))
     monkeypatch.setattr(service_mod.EmailTemplateService, 'get_template_preview_content', AsyncMock(return_value=('Sout', '<p>Bout</p>')))
@@ -78,3 +82,12 @@ async def test_schedule_candidate_success(monkeypatch):
     )
     res = await s.schedule_candidate(req)
     assert res['data']['scheduled_count'] == 1
+
+    assert send_email_mock.await_count == 1
+    sent_link = send_email_mock.call_args.kwargs.get('interview_link')
+    assert isinstance(sent_link, str)
+    assert '/interview/join?token=' in sent_link
+
+    assert create_batch_mock.await_count == 1
+    schedules_payload = create_batch_mock.call_args.args[1]
+    assert schedules_payload[0]['round_id'] == 'resolved-round-id'

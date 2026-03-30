@@ -2,14 +2,24 @@
 
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.engine import URL
 
 from app.config.app_config import AppConfig
 import os
 
 settings = AppConfig()
 
+database_url = URL.create(
+    drivername="postgresql+asyncpg",
+    username=settings.db_user,
+    password=settings.db_password,
+    host=settings.db_host,
+    port=int(settings.db_port),
+    database=settings.db_name,
+)
+
 engine = create_async_engine(
-    f"postgresql+asyncpg://{settings.db_user}:{settings.db_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}",
+    database_url,
     echo=False,
     future=True,
     pool_size=int(settings.db_pool_size),

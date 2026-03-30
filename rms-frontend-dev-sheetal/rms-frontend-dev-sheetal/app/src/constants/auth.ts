@@ -1,6 +1,6 @@
 export const AUTH_CONFIG = {
   BRAND: {
-    name: "PRAYAG.AI",
+    name: "RMS",
     tagline: "Recruitment Management",
     subtitle: "INNOVATION AND EXCELLENCE"
   },

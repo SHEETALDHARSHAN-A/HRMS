@@ -75,7 +75,7 @@ const BulkUploaderForJob: React.FC<BulkUploaderForJobProps> = ({ job, onComplete
 
   const msg = latestMessage as unknown as TaskStatusMessage;
   // Debug incoming WS payload to help trace missing/incorrect fields
-  // eslint-disable-next-line no-console
+   
   console.debug('BulkUploaderForJob received WS message:', msg);
   const workerStage = (msg.stage || "").toLowerCase();
   const statusText = msg.status ?? "";
@@ -444,12 +444,12 @@ const BulkUploaderForJob: React.FC<BulkUploaderForJobProps> = ({ job, onComplete
       // Notify career page to refresh (cross-tab and same-tab)
       try {
         window.localStorage.setItem('career_jobs_refresh', String(Date.now()));
-      } catch (e) {
+      } catch {
         // ignore
       }
       try {
         window.dispatchEvent(new CustomEvent('career_jobs_refresh'));
-      } catch (e) {
+      } catch {
         // ignore
       }
     }

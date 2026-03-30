@@ -30,6 +30,7 @@ import EmailUpdateSuccessPage from './pages/Auth/EmailUpdateSuccessPage';
 import MultiAccountManager from './utils/multiAccountManager';
 import InterviewLoginPage from "./pages/Interview/InterviewLoginPage";
 import InterviewThankYou from "./pages/Interview/InterviewThankYou";
+import InterviewCodingPage from "./pages/Interview/InterviewCodingPage";
 import AgentHubPage from './pages/AgentHub/AgentHubPage';
 import installFetchAuthInterceptor from './utils/fetchAuthInterceptor';
 /**
@@ -109,6 +110,7 @@ function App() {
             {/* /interview/join is now a public route */}
             <Route path="/interview/join" element={<InterviewLoginPage />} />
             <Route path="/interview/thank-you" element={<InterviewThankYou />} />
+            <Route path="/interview/coding" element={<InterviewCodingPage />} />
 
             {/* Admin Setup/Verification Routes (Publicly Accessible via email link) */}
             <Route path="/auth/complete-admin-setup" element={<AdminSetupCompletionPage />} />

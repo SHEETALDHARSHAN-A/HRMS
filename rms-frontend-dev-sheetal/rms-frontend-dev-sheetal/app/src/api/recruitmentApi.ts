@@ -220,7 +220,7 @@ export interface Candidate {
     result: "shortlist" | "under_review" | "rejected";
     round_name: string;
     round_id: string;
-    round_status: "shortlisted" | "under_review" | "rejected";
+    round_status: CandidateStatus | "interview_scheduled";
     reason: string | null;
     score_breakdown: ScoreBreakdown;
     skill_explanation: Record<string, SkillExplanation>;
@@ -235,11 +235,15 @@ export type InterviewType = 'Agent_interview' | 'In_person';
 
 export interface ScheduleInterviewData {
     job_id: string;
+    profile_id: string[];
     round_id: string;
-    candidate_profile_ids: string[];
-    interview_datetime: string; // ISO 8601 string
-    interview_level: InterviewLevel;
+    interview_date: string;
+    interview_time: string;
+    interviewer_id?: string;
     interview_type: InterviewType;
+    level_of_interview: string;
+    email_subject?: string;
+    email_body?: string;
 }
 
 type RecruitmentApiResult<T> = Promise<{ success: boolean; data?: T; error?: string }>;
@@ -263,7 +267,7 @@ export const patchCandidateStatus = async (
     const backendStatus = newStatus === 'shortlisted' ? 'shortlist' : (newStatus === 'rejected' ? 'reject' : 'under_review');
     try {
         // Construct the payload including reason
-        const payload: { new_result: String; reason: string } = { 
+        const payload: { new_result: string; reason: string } = {
             new_result: backendStatus,
             reason: reason // Reason is always sent
         };

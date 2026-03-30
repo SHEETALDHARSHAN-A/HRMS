@@ -1243,6 +1243,12 @@ const generateDefaultEmailContent = (
 ): EmailTemplate => {
     
     const defaultSubject = `Interview Invitation - {JOB_TITLE} | shortlisted in {ROUND_NAME} `;
+    const interviewModeLabel =
+        interviewType === 'agent'
+            ? 'AI Agent Interview'
+            : interviewType === 'hybrid'
+                ? 'Hybrid Interview'
+                : 'In-Person Interview';
 
     const defaultBody = `Dear {CANDIDATE_NAME},
 
@@ -1252,6 +1258,7 @@ Congratulations! We are delighted to inform you that you have been shortlisted i
 
 Position: {JOB_TITLE}
 Next Round: {NEXT_ROUND_NAME}
+Interview Mode: ${interviewModeLabel}
 Date: {DATE}
 Time: {TIME}
 
@@ -1265,7 +1272,7 @@ Should you have any questions or need to reschedule, please don't hesitate to re
 
 Best regards,
 
-Prayag RMS Team
+RMS Team
 `;
 
     return {
@@ -1315,8 +1322,6 @@ const ScheduleInterviewModal: React.FC<ScheduleInterviewModalProps> = ({ isOpen,
         }
     }, [isOpen, data]);
 
-    if (!isOpen) return null;
-
     const currentJobPostType = data.jobDetails 
         ? mapJobPostTypeToApiType(data.jobDetails.interview_type)
         : 'Agent_interview'; 
@@ -1330,6 +1335,8 @@ const ScheduleInterviewModal: React.FC<ScheduleInterviewModalProps> = ({ isOpen,
         if (scoreFilter === 0) return allShortlistedCandidates;
         return allShortlistedCandidates.filter(c => c.overall_score >= scoreFilter);
     }, [allShortlistedCandidates, scoreFilter]);
+
+    if (!isOpen) return null;
 
 
     const handleToggleCandidate = (profileId: string) => {
@@ -1525,31 +1532,31 @@ const ScheduleInterviewModal: React.FC<ScheduleInterviewModalProps> = ({ isOpen,
                                             <div className="flex-1">
                                                 <h4 className="text-sm font-bold text-indigo-900 mb-2">Dynamic Placeholders - How They Work</h4>
                                                 <p className="text-xs text-indigo-800 mb-3">
-                                                    Placeholders like <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-600 text-white text-xs font-mono">{'\{CANDIDATE_NAME\}'}</span> are automatically replaced with real data when emails are sent. You can edit all content freely — just keep placeholder format exact (uppercase with braces).
+                                                    Placeholders like <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-600 text-white text-xs font-mono">{'{CANDIDATE_NAME}'}</span> are automatically replaced with real data when emails are sent. You can edit all content freely - just keep placeholder format exact (uppercase with braces).
                                                 </p>
                                                 <div className="grid grid-cols-2 gap-2 text-xs">
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'\{CANDIDATE_NAME\}'}</span>
+                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'{CANDIDATE_NAME}'}</span>
                                                         
                                                     </div>
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'\{JOB_TITLE\}'}</span>
+                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'{JOB_TITLE}'}</span>
                                                         
                                                     </div>
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'\{ROUND_NAME\}'}</span>
+                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'{ROUND_NAME}'}</span>
                                                         
                                                     </div>
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'\{DATE\}'}</span>
+                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'{DATE}'}</span>
                                                         
                                                     </div>
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'\{TIME\}'}</span>
+                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'{TIME}'}</span>
                                                         
                                                     </div>
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'\{INTERVIEW_LINK\}'}</span>
+                                                        <span className="inline-block px-1.5 py-0.5 bg-indigo-600 text-white rounded text-[10px] font-mono">{'{INTERVIEW_LINK}'}</span>
                                                        
                                                     </div>
                                                 </div>

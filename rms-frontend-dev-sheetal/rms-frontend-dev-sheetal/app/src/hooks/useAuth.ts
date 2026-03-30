@@ -4,7 +4,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { authService } from '../services/authService';
 import { AUTH_CONFIG } from '../constants/auth';
-import type { AuthResponse, AuthData } from '../types/auth';
+import type { AuthResponse } from '../types/auth';
 import { clearAllAuthData, broadcastLogout } from '../utils/authUtils';
 import MultiAccountManager from '../utils/multiAccountManager';
 import { useUserUpdate } from '../context/UserContext';
@@ -13,14 +13,23 @@ import { useUserUpdate } from '../context/UserContext';
 const EMAIL_KEY = 'authEmail';
 const STEP_KEY = 'authStep';
 
-// Helper function to read initial state from session storage
+// Always start on the email step. If remember-me is enabled, prefill only the email.
 const getInitialState = () => {
-    const persistedEmail = localStorage.getItem('rememberMe') === 'true' ? localStorage.getItem('authEmail') || '' : '';
-    const persistedStep = persistedEmail ? AUTH_CONFIG.AUTH_STEPS.VERIFY_OTP : AUTH_CONFIG.AUTH_STEPS.SIGN_IN;
+  try {
+    if (sessionStorage.getItem(STEP_KEY) === AUTH_CONFIG.AUTH_STEPS.VERIFY_OTP) {
+      sessionStorage.removeItem(STEP_KEY);
+    }
+  } catch {
+    // Ignore storage access issues in restricted environments.
+  }
+
+  const persistedEmail = localStorage.getItem('rememberMe') === 'true'
+    ? localStorage.getItem('authEmail') || ''
+    : '';
 
     return {
         email: persistedEmail,
-        step: persistedStep,
+    step: AUTH_CONFIG.AUTH_STEPS.SIGN_IN,
     };
 };
 
@@ -257,19 +266,19 @@ export const useAuth = () => {
   };
 
   // --- Other functions (No changes) ---
-  const switchToSignUp = () => {
+  const switchToSignUp = useCallback(() => {
     setCurrentStep(AUTH_CONFIG.AUTH_STEPS.SIGN_UP);
     sessionStorage.removeItem(STEP_KEY); 
     setError(null);
-  };
+  }, []);
 
-  const switchToSignIn = () => {
+  const switchToSignIn = useCallback(() => {
     setCurrentStep(AUTH_CONFIG.AUTH_STEPS.SIGN_IN);
     sessionStorage.removeItem(STEP_KEY); 
     setError(null);
-  };
+  }, []);
 
-  const goBackToForm = () => {
+  const goBackToForm = useCallback(() => {
     if (isSignUpFlow) {
       setCurrentStep(AUTH_CONFIG.AUTH_STEPS.SIGN_UP);
     } else {
@@ -278,7 +287,7 @@ export const useAuth = () => {
     sessionStorage.removeItem(STEP_KEY); 
     setError(null);
     setLoading(false);
-  }
+  }, [isSignUpFlow]);
 
   const logout = useCallback(async (): Promise<AuthResponse> => {
     setLoading(true);

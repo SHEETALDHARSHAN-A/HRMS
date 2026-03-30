@@ -62,7 +62,9 @@ export const getMyInvitations = async (status?: string): Promise<{ success: bool
     if (err?.response && (err.response.status === 401 || err.response.status === 403)) {
       try {
         window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } }));
-      } catch (e) {}
+      } catch {
+        // no-op
+      }
     }
     return { success: false, error: err.response?.data?.message || err.message };
   }
@@ -78,7 +80,9 @@ export const getInvitationStats = async (): Promise<{ success: boolean, data?: I
     return { success: false, error: response.data.message || "Failed to fetch invitation stats." };
   } catch (err: any) {
     if (err?.response && (err.response.status === 401 || err.response.status === 403)) {
-      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch (e) {}
+      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch {
+        // no-op
+      }
     }
     return { success: false, error: err.response?.data?.message || err.message };
   }
@@ -96,7 +100,9 @@ export const getNotifications = async (unreadOnly: boolean = false, limit: numbe
     return { success: false, error: response.data.message || "Failed to fetch notifications." };
   } catch (err: any) {
     if (err?.response && (err.response.status === 401 || err.response.status === 403)) {
-      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch (e) {}
+      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch {
+        // no-op
+      }
     }
     return { success: false, error: err.response?.data?.message || err.message };
   }
@@ -112,7 +118,9 @@ export const getUnreadNotificationCount = async (): Promise<{ success: boolean, 
     return { success: false, error: response.data.message || "Failed to fetch unread count." };
   } catch (err: any) {
     if (err?.response && (err.response.status === 401 || err.response.status === 403)) {
-      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch (e) {}
+      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch {
+        // no-op
+      }
     }
     return { success: false, error: err.response?.data?.message || err.message };
   }
@@ -124,7 +132,9 @@ export const markNotificationAsRead = async (notificationId: string): Promise<{ 
     return { success: response.data.success, message: response.data.message };
   } catch (err: any) {
     if (err?.response && (err.response.status === 401 || err.response.status === 403)) {
-      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch (e) {}
+      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch {
+        // no-op
+      }
     }
     return { success: false, error: err.response?.data?.message || err.message };
   }
@@ -136,7 +146,9 @@ export const markAllNotificationsAsRead = async (): Promise<{ success: boolean, 
     return { success: response.data.success, message: response.data.message };
   } catch (err: any) {
     if (err?.response && (err.response.status === 401 || err.response.status === 403)) {
-      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch (e) {}
+      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch {
+        // no-op
+      }
     }
     return { success: false, error: err.response?.data?.message || err.message };
   }
@@ -148,7 +160,9 @@ export const deleteNotification = async (notificationId: string): Promise<{ succ
     return { success: response.data.success, message: response.data.message };
   } catch (err: any) {
     if (err?.response && (err.response.status === 401 || err.response.status === 403)) {
-      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch (e) {}
+      try { window.dispatchEvent(new CustomEvent('auth-error', { detail: { status: err.response.status, message: err.response.data?.message } })); } catch {
+        // no-op
+      }
     }
     return { success: false, error: err.response?.data?.message || err.message };
   }

@@ -4,7 +4,7 @@ import os
 import re
 import json
 
-from agents import Agent, Runner
+from agents import Agent, Runner, set_tracing_disabled
 from fastapi import HTTPException, status
 from typing import List, Dict, Any, Union
 
@@ -14,6 +14,12 @@ from app.services.job_post.analyze_jd.base import BaseAnalyzeJD
 from app.prompts.analyze_jd_prompt import output_structure, prompt_content
  
 settings = AppConfig()
+
+try:
+    # Groq inference works via OpenAI-compatible API. Disable OpenAI tracing to avoid non-fatal 401 noise.
+    set_tracing_disabled(True)
+except Exception:
+    pass
  
 class AnalyzeJobPost(BaseAnalyzeJD):
     """
@@ -27,13 +33,19 @@ class AnalyzeJobPost(BaseAnalyzeJD):
     def _create_agent(self) -> Union[Agent, Dict]:
         """Initializes the LLM agent using the configured API key and static prompt."""
         try:
-            # Set the environment variable for the LLM SDK/Agent
-            os.environ['OPENAI_API_KEY'] = settings.openai_api_key
+            llm_api_key = settings.effective_groq_api_key
+            if not llm_api_key:
+                raise ValueError("Groq API key is not configured")
+
+            # openai-agents uses OpenAI-compatible env vars; point it at Groq.
+            os.environ['OPENAI_API_KEY'] = llm_api_key
+            os.environ['OPENAI_BASE_URL'] = settings.groq_base_url
             print(f"[DEBUG] LLM API key set successfully.")
            
             # The base prompt (PROMPT_CONTENT) is used as the agent's core instructions.
             return Agent(
                 name="JD Analyzer",
+                model=settings.effective_groq_model,
                 instructions=prompt_content,
             )
         except Exception as e:

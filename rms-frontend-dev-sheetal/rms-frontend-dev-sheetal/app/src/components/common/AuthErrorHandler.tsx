@@ -23,12 +23,12 @@ const AuthErrorHandler: React.FC = () => {
       try {
         const url = detail.url || '';
         if (url && EXCLUDED_PATHS.some((p) => {
-          try { return url === p || url.startsWith(p) || url.includes(p); } catch (e) { return false; }
+          try { return url === p || url.startsWith(p) || url.includes(p); } catch { return false; }
         })) {
           console.debug('[AuthErrorHandler] Ignoring auth-error for excluded URL:', url);
           return;
         }
-      } catch (e) {
+      } catch {
         // ignore errors while checking excluded list
       }
       const status = detail.status;
@@ -56,8 +56,12 @@ const AuthErrorHandler: React.FC = () => {
           setIsOpen(true);
           pendingMsgRef.current = null;
           // cleanup
-          try { window.removeEventListener('focus', showOnReturn); } catch (e) {}
-          try { document.removeEventListener('visibilitychange', visibilityHandler); } catch (e) {}
+          try { window.removeEventListener('focus', showOnReturn); } catch {
+            // no-op
+          }
+          try { document.removeEventListener('visibilitychange', visibilityHandler); } catch {
+            // no-op
+          }
         };
 
         const visibilityHandler = () => {
@@ -88,7 +92,9 @@ const AuthErrorHandler: React.FC = () => {
       const manager = MultiAccountManager.getInstance();
       manager.clearCurrentSession();
       clearTokenForCurrentTab();
-      try { localStorage.setItem('logout-event', Date.now().toString()); } catch (e) {}
+      try { localStorage.setItem('logout-event', Date.now().toString()); } catch {
+        // no-op
+      }
       window.location.href = '/auth';
     } catch (e) {
       console.error('Error during forced logout', e);

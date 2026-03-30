@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
-from sqlalchemy import Column, String, Text, ForeignKey, TIMESTAMP, Integer
+from sqlalchemy import Column, String, Text, ForeignKey, TIMESTAMP, Integer, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.db.connection_manager import Base
@@ -45,6 +45,22 @@ class AgentRoundConfig(Base):
 
     # For in-person rounds: the interviewer user id (references users.user_id)
     interviewer_id = Column(PG_UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=True)
+    # Coding challenge controls (MVP): supports AI-generated or admin-provided questions
+    coding_enabled = Column(Boolean, default=False, nullable=False)
+    coding_question_mode = Column(String, default='ai', nullable=False)
+    coding_difficulty = Column(String, default='medium', nullable=True)
+    coding_languages = Column(JSONB, default=list, nullable=True)
+    provided_coding_question = Column(Text, nullable=True)
+    coding_test_case_mode = Column(String, default='provided', nullable=False)
+    coding_test_cases = Column(JSONB, default=list, nullable=True)
+    coding_starter_code = Column(JSONB, default=dict, nullable=True)
+
+    # MCQ challenge controls
+    mcq_enabled = Column(Boolean, default=False, nullable=False)
+    mcq_question_mode = Column(String, default='provided', nullable=False)
+    mcq_difficulty = Column(String, default='medium', nullable=True)
+    mcq_questions = Column(JSONB, default=list, nullable=True)
+    mcq_passing_score = Column(Integer, default=60, nullable=True)
     # Optional score distribution for this round's scoring (e.g., {
     #   "shortlisting": 60, "rejecting": 40 }
     score_distribution = Column(JSONB, default=dict, nullable=True)

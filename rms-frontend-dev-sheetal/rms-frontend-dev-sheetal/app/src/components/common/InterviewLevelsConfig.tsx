@@ -9,11 +9,15 @@ import {
   Minus, 
   Plus, 
   Headset,
+  Code2,
+  ListChecks,
   Users,
   Shield
 } from 'lucide-react';
 import type { InterviewLevel } from '../../pages/JobPosts/JobPostsForm';
 import clsx from 'clsx';
+import { Badge } from '../ui/badge';
+import { Card } from '../ui/card';
 // === MODIFICATION: Import the new component ===
 import UserSearchCombobox from './UserSearchCombobox'; 
 // === END MODIFICATION ===
@@ -408,7 +412,9 @@ const InterviewLevelsConfig: React.FC<InterviewLevelsConfigProps> = ({
 
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="relative overflow-hidden rounded-2xl">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(59,130,246,0.22),_transparent_62%),radial-gradient(ellipse_at_bottom_left,_rgba(16,185,129,0.14),_transparent_52%)]" />
+      <Card className="p-6 shadow-[0_18px_50px_-36px_rgba(37,99,235,0.35)]">
       <div className="flex items-center gap-3 mb-6">
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
           <ListOrdered size={16} className="text-slate-600" />
@@ -417,10 +423,10 @@ const InterviewLevelsConfig: React.FC<InterviewLevelsConfigProps> = ({
           <label className="block text-lg font-semibold text-slate-900">Interview Configuration</label>
           <p className="text-sm text-slate-500">Define interview rounds and evaluation criteria for candidate assessment.</p>
         </div>
-        <span className="ml-auto inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+        <Badge variant="secondary" className="ml-auto">
           <Target size={12} />
           Required
-        </span>
+        </Badge>
       </div>
 
       {/* Round Count Controls */}
@@ -562,6 +568,75 @@ const InterviewLevelsConfig: React.FC<InterviewLevelsConfigProps> = ({
           const isRoundOne = index === 0;
           const thresholdError = level.rejectThreshold > level.shortlistThreshold;
           const agentCfg = (agentConfigs && agentConfigs[index]) ? agentConfigs[index] : null;
+          const rawMode = String(agentCfg?.interview_mode || agentCfg?.interviewMode || '').toLowerCase();
+          const activeMode = (() => {
+            if (['offline', 'in_person', 'inperson', 'in-person', 'in person'].includes(rawMode)) return 'offline';
+            if (['mcq', 'quiz', 'aptitude', 'apti', 'apti_screening'].includes(rawMode)) return 'aptitude';
+            if (['coding', 'code'].includes(rawMode)) return 'coding';
+            if (['screening', 'screen'].includes(rawMode)) return 'screening';
+            if (rawMode === 'agent') return 'agent';
+            return isRoundOne ? 'screening' : 'agent';
+          })();
+
+          const setRoundMode = (mode: 'screening' | 'aptitude' | 'coding' | 'agent' | 'offline') => {
+            if (!setAgentConfigs) return;
+
+            const next = agentConfigs ? [...agentConfigs] : [];
+            const current = next[index] || {};
+
+            if (mode === 'screening') {
+              next[index] = {
+                ...current,
+                interview_mode: 'screening',
+                coding_enabled: false,
+                mcq_enabled: false,
+                interview_time_min: null,
+                interview_time_max: null,
+              };
+            } else if (mode === 'aptitude') {
+              next[index] = {
+                ...current,
+                interview_mode: 'aptitude',
+                coding_enabled: false,
+                mcq_enabled: true,
+                mcq_question_mode: current.mcq_question_mode || 'provided',
+                mcq_difficulty: current.mcq_difficulty || 'medium',
+                mcq_passing_score: Number(current.mcq_passing_score ?? 60) || 60,
+                interview_time_min: null,
+                interview_time_max: null,
+              };
+            } else if (mode === 'coding') {
+              next[index] = {
+                ...current,
+                interview_mode: 'coding',
+                coding_enabled: true,
+                mcq_enabled: false,
+                coding_question_mode: current.coding_question_mode || 'ai',
+                coding_difficulty: current.coding_difficulty || 'medium',
+                coding_languages: current.coding_languages || ['python'],
+              };
+            } else if (mode === 'agent') {
+              next[index] = {
+                ...current,
+                interview_mode: 'agent',
+                coding_enabled: false,
+                mcq_enabled: false,
+                interview_time_min: Number(current.interview_time_min ?? 15) || 15,
+                interview_time_max: Number(current.interview_time_max ?? 30) || 30,
+              };
+            } else {
+              next[index] = {
+                ...current,
+                interview_mode: 'offline',
+                coding_enabled: false,
+                mcq_enabled: false,
+                interview_time_min: null,
+                interview_time_max: null,
+              };
+            }
+
+            setAgentConfigs(next);
+          };
           return (
             <div 
               key={index} 
@@ -611,88 +686,76 @@ const InterviewLevelsConfig: React.FC<InterviewLevelsConfigProps> = ({
                 <div className="mt-3">
                   <label className="mb-2 block text-sm font-medium text-slate-700">Interview Mode</label>
                   
-                  <div className="flex w-full max-w-md rounded-xl border-2 p-1 bg-gray-50/50 border-gray-200">
-                    {isRoundOne ? (
-                      // First round: screening or in-person
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!setAgentConfigs) return;
-                            const next = agentConfigs ? [...agentConfigs] : [];
-                            next[index] = { ...(next[index] || {}), interview_mode: 'screening', interview_time: null, interviewer_id: null };
-                            setAgentConfigs(next);
-                          }}
-                          className={clsx(
-                            "flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200",
-                            agentCfg && agentCfg.interview_mode === 'screening'
-                              ? 'bg-white text-blue-700 shadow-md ring-1 ring-blue-100'
-                              : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
-                          )}
-                        >
-                          <Shield size={16} />
-                          Screening
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!setAgentConfigs) return;
-                            const next = agentConfigs ? [...agentConfigs] : [];
-                            next[index] = { ...(next[index] || {}), interview_mode: 'offline' };
-                            setAgentConfigs(next);
-                          }}
-                          className={clsx(
-                            "flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200",
-                            agentCfg && (agentCfg.interview_mode === 'offline' || agentCfg.interview_mode === 'in_person')
-                              ? 'bg-white text-blue-700 shadow-md ring-1 ring-blue-100'
-                              : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
-                          )}
-                        >
-                          <Users size={16} />
-                          In-person
-                        </button>
-                      </>
-                    ) : (
-                      // Other rounds: agent or in-person
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!setAgentConfigs) return;
-                            const next = agentConfigs ? [...agentConfigs] : [];
-                            next[index] = { ...(next[index] || {}), interview_mode: 'agent', interview_time: (next[index] && next[index].interview_time) || 30 };
-                            setAgentConfigs(next);
-                          }}
-                          className={clsx(
-                            "flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200",
-                            agentCfg && agentCfg.interview_mode === 'agent'
-                              ? 'bg-white text-blue-700 shadow-md ring-1 ring-blue-100'
-                              : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
-                          )}
-                        >
-                          <Headset size={16} />
-                          Agent
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!setAgentConfigs) return;
-                            const next = agentConfigs ? [...agentConfigs] : [];
-                            next[index] = { ...(next[index] || {}), interview_mode: 'offline', interview_time: null };
-                            setAgentConfigs(next);
-                          }}
-                          className={clsx(
-                            "flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-medium transition-all duration-200",
-                            agentCfg && (agentCfg.interview_mode === 'offline' || agentCfg.interview_mode === 'in_person')
-                              ? 'bg-white text-blue-700 shadow-md ring-1 ring-blue-100'
-                              : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
-                          )}
-                        >
-                          <Users size={16} />
-                          In-person
-                        </button>
-                      </>
-                    )}
+                  <div className="flex w-full flex-wrap rounded-xl border-2 p-1 bg-gradient-to-r from-gray-50 to-blue-50/40 border-gray-200 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setRoundMode('screening')}
+                      className={clsx(
+                        "flex-1 min-w-[110px] flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-medium transition-all duration-200",
+                        activeMode === 'screening'
+                          ? 'bg-white text-blue-700 shadow-md ring-1 ring-blue-100'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
+                      )}
+                    >
+                      <Shield size={16} />
+                      Screening
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRoundMode('aptitude')}
+                      className={clsx(
+                        "flex-1 min-w-[110px] flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-medium transition-all duration-200",
+                        activeMode === 'aptitude'
+                          ? 'bg-white text-blue-700 shadow-md ring-1 ring-blue-100'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
+                      )}
+                    >
+                      <ListChecks size={16} />
+                      Apti / MCQ
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRoundMode('coding')}
+                      className={clsx(
+                        "flex-1 min-w-[100px] flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-medium transition-all duration-200",
+                        activeMode === 'coding'
+                          ? 'bg-white text-blue-700 shadow-md ring-1 ring-blue-100'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
+                      )}
+                    >
+                      <Code2 size={16} />
+                      Coding
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRoundMode('agent')}
+                      className={clsx(
+                        "flex-1 min-w-[100px] flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-medium transition-all duration-200",
+                        activeMode === 'agent'
+                          ? 'bg-white text-blue-700 shadow-md ring-1 ring-blue-100'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
+                      )}
+                    >
+                      <Headset size={16} />
+                      Agent
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRoundMode('offline')}
+                      className={clsx(
+                        "flex-1 min-w-[110px] flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-sm font-medium transition-all duration-200",
+                        activeMode === 'offline'
+                          ? 'bg-white text-blue-700 shadow-md ring-1 ring-blue-100'
+                          : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
+                      )}
+                    >
+                      <Users size={16} />
+                      In-person
+                    </button>
                   </div>
 
 
@@ -889,6 +952,7 @@ const InterviewLevelsConfig: React.FC<InterviewLevelsConfigProps> = ({
           {error}
         </div>
       )}
+      </Card>
     </div>
   );
 };

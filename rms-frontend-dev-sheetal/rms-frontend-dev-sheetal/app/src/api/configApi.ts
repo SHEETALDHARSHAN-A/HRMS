@@ -37,7 +37,7 @@ export async function previewTemplate(
       if (resp && resp.data && resp.data.message) {
         return { __error: resp.data.message } as any;
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
     console.error('Error in previewTemplate API call:', error);

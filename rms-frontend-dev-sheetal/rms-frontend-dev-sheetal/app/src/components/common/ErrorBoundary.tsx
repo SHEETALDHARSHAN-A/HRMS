@@ -3,25 +3,26 @@ import { useNavigate } from 'react-router-dom'
 import type { NavigateFunction } from 'react-router-dom'
 
 type Props = { children: React.ReactNode }
+type ErrorBoundaryInnerProps = Props & { navigate: NavigateFunction }
 
 type State = { hasError: boolean }
 
-class ErrorBoundaryInner extends React.Component<Props, State> {
+class ErrorBoundaryInner extends React.Component<ErrorBoundaryInnerProps, State> {
   navigate: NavigateFunction
-  constructor(props: Props & { navigate: NavigateFunction }) {
+  constructor(props: ErrorBoundaryInnerProps) {
     super(props)
     this.state = { hasError: false }
-    this.navigate = (props as any).navigate
+    this.navigate = props.navigate
   }
 
   static getDerivedStateFromError(_: Error): State {
     return { hasError: true }
   }
 
-  componentDidCatch(error: Error, info: any) {
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
     // Log the error somewhere (console for now)
     // In future, wire into your analytics/telemetry
-    // eslint-disable-next-line no-console
+     
     console.error('ErrorBoundary caught', error, info)
   }
   componentDidMount() {
@@ -31,28 +32,28 @@ class ErrorBoundaryInner extends React.Component<Props, State> {
         setTimeout(() => {
           try {
             this.navigate('/interview/thank-you')
-          } catch (e) {
+          } catch {
             // ignore
           }
         }, 0)
-      } catch (_) {
+      } catch {
         // ignore
       }
     }
   }
 
-  componentDidUpdate(_prevProps: any, prevState: State) {
+  componentDidUpdate(_prevProps: ErrorBoundaryInnerProps, prevState: State) {
     if (!prevState.hasError && this.state.hasError) {
       // Navigate once after the error state is set to avoid updating during render
       try {
         setTimeout(() => {
           try {
             this.navigate('/interview/thank-you')
-          } catch (e) {
+          } catch {
             // ignore
           }
         }, 0)
-      } catch (_) {
+      } catch {
         // ignore
       }
     }
@@ -71,7 +72,7 @@ class ErrorBoundaryInner extends React.Component<Props, State> {
               onClick={() => {
                 try {
                   this.navigate('/interview/thank-you')
-                } catch (e) {
+                } catch {
                   // ignore
                 }
               }}
@@ -88,7 +89,6 @@ class ErrorBoundaryInner extends React.Component<Props, State> {
 
 const ErrorBoundary: React.FC<Props> = ({ children }) => {
   const navigate = useNavigate()
-  // @ts-ignore - passing navigate into class constructor
   return <ErrorBoundaryInner navigate={navigate}>{children}</ErrorBoundaryInner>
 }
 

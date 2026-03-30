@@ -3,10 +3,11 @@
 import re
 import uuid
 import json
+import os
 import redis.asyncio as redis
 
 from uuid import UUID
-from agents import Agent, Runner
+from agents import Agent, Runner, set_tracing_disabled
 from fastapi import HTTPException
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
@@ -14,6 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.prompts.curation_prompt import RESUME_CURATION_PROMPT
 from src.db.repository.curation_repository import CurationRepository
+from src.config.app_config import AppConfig
+
+try:
+    # Groq inference works via OpenAI-compatible API. Disable OpenAI tracing to avoid non-fatal 401 noise.
+    set_tracing_disabled(True)
+except Exception:
+    pass
 
 # Fallback channel constant for robustness
 DEFAULT_STATUS_CHANNEL = "ATS_JOB_STATUS" 
@@ -276,10 +284,19 @@ class CurateProfiles:
         self.db_session = db_session
         self.curation_repo = CurationRepository(db_session)
         self.scorer = ScoringLogic()
+        self.config = AppConfig()
         # Set status channel, defaulting if not provided
         self.status_channel = DEFAULT_STATUS_CHANNEL 
+        self._configure_llm_environment()
         
         print("[INFO] CurateProfiles service initialized")
+
+    def _configure_llm_environment(self) -> None:
+        """Configure openai-agents to route requests to Groq."""
+        api_key = self.config.effective_groq_api_key
+        if api_key:
+            os.environ["OPENAI_API_KEY"] = api_key
+            os.environ["OPENAI_BASE_URL"] = self.config.groq_base_url
 
     async def publish_progress(
         self,
@@ -333,6 +350,11 @@ class CurateProfiles:
         # Set status channel override
         if status_channel:
             self.status_channel = status_channel
+
+        if not self.config.effective_groq_api_key:
+            raise ValueError("Groq API key is not configured for resume curation")
+
+        self._configure_llm_environment()
 
         try:
             job_uuid = UUID(job_id)
@@ -473,7 +495,11 @@ class CurateProfiles:
 
                 try:
                     # 3a. INVOKE LLM AGENT
-                    agent = Agent(name="Resume Curation Agent", instructions=RESUME_CURATION_PROMPT)
+                    agent = Agent(
+                        name="Resume Curation Agent",
+                        model=self.config.effective_groq_model,
+                        instructions=RESUME_CURATION_PROMPT,
+                    )
                     resume_text_string = json.dumps(resume_input_data, ensure_ascii=False)
                     input_payload = json.dumps({"Resume Text": resume_text_string, "Job Details": job_details_for_prompt})
                     llm_output_run = await Runner.run(agent, [{"role": "user", "content": input_payload}])

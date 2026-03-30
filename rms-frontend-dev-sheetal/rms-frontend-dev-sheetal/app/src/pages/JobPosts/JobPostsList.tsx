@@ -1,9 +1,9 @@
-import { FilePenLine, Trash2, Loader2, RefreshCw, Plus, X, MapPin, Calendar, Menu, LayoutDashboard, Briefcase, FileText, BarChart, MessageCircle, Users, Headset, CheckSquare, ChevronDown, Check, Info, Pin, View, Combine } from "lucide-react"; 
+import { FilePenLine, Trash2, Loader2, RefreshCw, Plus, X, MapPin, Calendar, Menu, LayoutDashboard, Briefcase, FileText, BarChart, MessageCircle, Users, Headset, CheckSquare, ChevronDown, Check, Info, Pin, View } from "lucide-react"; 
 import { useUser } from "../../context/UserContext";
 import Button from "../../components/common/Button";
 import { NavLink } from "react-router-dom";
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { getAllJobPosts, getActiveJobPosts, toggleJobStatus, deleteJobPost, getCandidateStatsForJob, getMyJobPosts, getAllJobPostsAdmin } from "../../api/jobApi";
+import { getActiveJobPosts, toggleJobStatus, deleteJobPost, getCandidateStatsForJob, getMyJobPosts, getAllJobPostsAdmin } from "../../api/jobApi";
 import { useToast, useModal } from "../../context/ModalContext";
 import { useLocation } from "react-router-dom";
 import clsx from "clsx"; 
@@ -31,6 +31,9 @@ interface JobPost {
   maximum_experience: number;
   skills_required: SkillRequired[];
   interview_rounds?: any[];
+  agentRounds?: any[];
+  agent_rounds?: any[];
+  agent_configs?: any[];
   interview_levels?: string[]; 
   interview_type?: InterviewType;
   work_from_home: boolean;
@@ -66,20 +69,6 @@ interface JobPost {
   rejecting_criteria?: number;
   posted_date?: string | null;
 }
-
-// Map interview type to the appropriate icon
-const InterviewTypeIcon = ({ type }: { type?: InterviewType }) => {
-  switch (type) {
-    case 'agent':
-      return <Headset size={16} className="text-gray-500" />;
-    case 'offline':
-      return <Users size={16} className="text-gray-500" />;
-    case 'hybrid':
-      return <Combine size={16} className="text-gray-500" />;
-    default:
-      return <Headset size={16} className="text-gray-500" />;
-  }
-};
 
 // Utility to resolve the ID from the user object
 const resolveUserId = (entity: any): string | undefined => {
@@ -156,6 +145,59 @@ const getJobCreatorId = (job: any): string | undefined => {
 // Normalize values so they can be compared safely as IDs
 const normalizeId = (value: unknown): string =>
   value === null || value === undefined ? "" : String(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const toTitleCase = (value: string): string =>
+  value
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map(token => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+
+const resolveRoundMode = (level: any, roundConfig: any): string | null => {
+  const modeCandidate = [
+    roundConfig?.interview_mode,
+    roundConfig?.interviewMode,
+    level?.interview_mode,
+    level?.interviewMode,
+    level?.interview_type,
+    level?.interviewType,
+    level?.mode,
+    level?.round_type,
+    level?.type,
+  ].find(v => typeof v === "string" && v.trim());
+
+  const normalizedMode = typeof modeCandidate === "string" ? modeCandidate.trim().toLowerCase() : "";
+  if (normalizedMode) {
+    if (normalizedMode.includes("coding") || normalizedMode.includes("code")) return "Coding";
+    if (
+      normalizedMode.includes("apti") ||
+      normalizedMode.includes("aptitude") ||
+      normalizedMode.includes("mcq") ||
+      normalizedMode.includes("quiz")
+    ) {
+      return "Aptitude";
+    }
+    if (normalizedMode.includes("screen")) return "Screening";
+    if (normalizedMode.includes("tech")) return "Technical";
+    if (normalizedMode.includes("hr")) return "HR";
+    if (normalizedMode.includes("agent")) return "Agent";
+    if (normalizedMode.includes("offline")) return "Offline";
+    if (normalizedMode.includes("hybrid")) return "Hybrid";
+    return toTitleCase(normalizedMode);
+  }
+
+  const codingEnabled = Boolean(
+    roundConfig?.coding_enabled ?? roundConfig?.codingEnabled ?? level?.coding_enabled ?? level?.codingEnabled ?? false
+  );
+  if (codingEnabled) return "Coding";
+
+  const mcqEnabled = Boolean(
+    roundConfig?.mcq_enabled ?? roundConfig?.mcqEnabled ?? level?.mcq_enabled ?? level?.mcqEnabled ?? false
+  );
+  if (mcqEnabled) return "Aptitude";
+
+  return null;
+};
 
 
 // --- COMPONENT START ---
@@ -330,6 +372,8 @@ export default function JobPostsList({ onAddNewJob, onEditJob, activeTab }: JobP
 
     const ownerName = firstNonEmptyString(...stringCandidates);
 
+    const agentRounds = src.agentRounds ?? src.agent_rounds ?? src.agent_configs ?? [];
+
     return {
       ...src,
       job_id: jobId,
@@ -342,6 +386,7 @@ export default function JobPostsList({ onAddNewJob, onEditJob, activeTab }: JobP
       // Keep a full rounds payload for the modal and a lightweight string list for compact display
       interview_rounds: src.interview_rounds ?? src.interview_levels ?? [],
       interview_levels: (src.interview_rounds ?? src.interview_levels ?? []).map((r: any) => (r?.level_name || r?.title || String(r))) ,
+        agentRounds,
   interview_type: src.interview_type ?? "agent",
   shortlisting_criteria: src.shortlisting_criteria ?? src.shortlistingCriteria ?? 0,
   rejecting_criteria: src.rejecting_criteria ?? src.rejectingCriteria ?? 0,
@@ -442,7 +487,7 @@ export default function JobPostsList({ onAddNewJob, onEditJob, activeTab }: JobP
     if (!jobs || jobs.length === 0) return;
     try {
       console.debug('[JobPostsList] sample job raw payload:', jobs[0]);
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, [jobs]);
@@ -647,8 +692,12 @@ export default function JobPostsList({ onAddNewJob, onEditJob, activeTab }: JobP
         setJobs(prev => prev.map(j => (j.job_id === updated.job_id ? { ...j, ...updated, is_active: updated.is_active } : j)));
         try {
           window.localStorage.setItem('career_jobs_refresh', String(Date.now()));
-        } catch (e) {}
-        try { window.dispatchEvent(new CustomEvent('career_jobs_refresh')); } catch (e) {}
+        } catch {
+          // no-op
+        }
+        try { window.dispatchEvent(new CustomEvent('career_jobs_refresh')); } catch {
+          // no-op
+        }
       } else {
         setJobs(prev => prev.map(j => (j.job_id === jobId ? { ...j, is_active: isActive } : j)));
         showToast(`Failed to toggle job status.`, "error");
@@ -932,7 +981,6 @@ export default function JobPostsList({ onAddNewJob, onEditJob, activeTab }: JobP
           displayedJobs.map((job) => {
           const creatorId = getJobCreatorId(job);
           const isAuthor = normalizeId(creatorId) === currentUserIdNormalized;
-          const canManage = isAuthor || isSuperAdmin;
           const canEdit = isSuperAdmin || (!viewingOthersTab && isAuthor);
           const canDelete = isSuperAdmin || (!viewingOthersTab && isAuthor);
           const canToggle = isSuperAdmin || (!viewingOthersTab && isAuthor);
@@ -1400,6 +1448,22 @@ export default function JobPostsList({ onAddNewJob, onEditJob, activeTab }: JobP
                       {(expandedJob.interview_rounds && expandedJob.interview_rounds.length > 0 ? expandedJob.interview_rounds : expandedJob.interview_levels || []).map((level: any, i: number) => {
                         const name = level?.level_name || level?.title || String(level || `Round ${i+1}`);
                         const desc = level?.round_description || level?.description || level?.context || '';
+                        const allAgentRounds = (
+                          expandedJob.agentRounds ||
+                          (expandedJob as any)?.agent_rounds ||
+                          (expandedJob as any)?.agent_configs ||
+                          []
+                        ) as any[];
+                        const normalizedName = String(name || '').trim().toLowerCase();
+                        const levelOrder = Number(level?.round_order ?? i + 1);
+                        const matchedAgentRound = allAgentRounds.find((ac: any) => {
+                          const acName = String(ac?.round_name || ac?.roundName || '').trim().toLowerCase();
+                          if (acName && normalizedName && acName === normalizedName) return true;
+                          const acOrder = Number(ac?.round_order ?? ac?.roundOrder ?? ac?.order ?? NaN);
+                          return Number.isFinite(acOrder) && Number.isFinite(levelOrder) && acOrder === levelOrder;
+                        });
+                        const roundMode = resolveRoundMode(level, matchedAgentRound);
+                        const showRoundMode = Boolean(roundMode) && !(i === 0 && String(roundMode).toLowerCase() === 'screening');
                         const shortlisting = level?.evaluation_criteria?.shortlisting_criteria ?? level?.shortlisting_threshold ?? level?.shortlisting ?? expandedJob?.shortlisting_criteria ?? null;
                         const rejecting = level?.evaluation_criteria?.rejecting_criteria ?? level?.rejected_threshold ?? level?.rejecting_threshold ?? level?.rejecting ?? expandedJob?.rejecting_criteria ?? null;
                         const potential = level?.evaluation_criteria?.potential ?? level?.potential ?? (i === 0 ? expandedJob?.potential : null);
@@ -1412,7 +1476,15 @@ export default function JobPostsList({ onAddNewJob, onEditJob, activeTab }: JobP
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-medium">{i + 1}</span>
-                                  <div className="font-medium">{name} <span className="text-xs text-gray-500 ml-2">(Screening)</span></div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-medium">{name}</span>
+                                    <span className="text-xs text-gray-500">(Screening)</span>
+                                    {showRoundMode && (
+                                      <span className="inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                                        Mode: {roundMode}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                                 <div className="text-xs text-gray-400">Round {i + 1}</div>
                               </div>
@@ -1449,7 +1521,14 @@ export default function JobPostsList({ onAddNewJob, onEditJob, activeTab }: JobP
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-medium">{i + 1}</span>
-                                <div className="font-medium">{name}</div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium">{name}</span>
+                                  {showRoundMode && (
+                                    <span className="inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                                      Mode: {roundMode}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <div className="text-xs text-gray-400">Round {i + 1}</div>
                             </div>

@@ -101,6 +101,36 @@ async def test_check_existing_schedules_returns_strings():
 
 
 @pytest.mark.asyncio
+async def test_check_existing_schedules_round_aware_match():
+    req_round = uuid4()
+    p1 = uuid4()
+    p2 = uuid4()
+    p3 = uuid4()
+
+    rows = [
+        SimpleNamespace(profile_id=p1, scheduled_round_id=req_round, interview_round_id=None, round_list_id=None),
+        SimpleNamespace(profile_id=p2, scheduled_round_id=uuid4(), interview_round_id=uuid4(), round_list_id=req_round),
+        SimpleNamespace(profile_id=p3, scheduled_round_id=uuid4(), interview_round_id=uuid4(), round_list_id=uuid4()),
+    ]
+
+    class Res:
+        def fetchall(self):
+            return rows
+
+    class FakeDB:
+        async def execute(self, stmt, *a, **kw):
+            return Res()
+
+    out = await repo.check_existing_schedules(
+        FakeDB(),
+        'job1',
+        [str(p1), str(p2), str(p3)],
+        requested_round_id=str(req_round),
+    )
+    assert set(out) == {str(p1), str(p2)}
+
+
+@pytest.mark.asyncio
 async def test_create_schedules_batch_success_and_fallback(monkeypatch):
     # Case 1: Scheduling accepts kwargs (simulate SQLAlchemy model)
     called = {'added': 0, 'committed': False}
@@ -216,6 +246,21 @@ async def test_get_round_name_and_next_round_details(monkeypatch):
     uid2 = str(uuid4())
     res = await repo.get_next_round_details(FakeDB4(), uid1, uid2)
     assert res == {'round_name': 'Technical'}
+
+
+@pytest.mark.asyncio
+async def test_resolve_round_instance_id_for_schedule_invalid_uuid_fallback():
+    class FakeDB:
+        async def execute(self, stmt, *a, **kw):
+            raise AssertionError("execute should not be called for invalid UUID inputs")
+
+    out = await repo.resolve_round_instance_id_for_schedule(
+        FakeDB(),
+        job_id='bad-job-id',
+        profile_id='bad-profile-id',
+        requested_round_id='not-a-uuid',
+    )
+    assert out == 'not-a-uuid'
 
 
 @pytest.mark.asyncio

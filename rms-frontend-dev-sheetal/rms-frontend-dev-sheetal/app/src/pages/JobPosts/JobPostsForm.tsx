@@ -1,13 +1,13 @@
 // ats-frontend-dev-sheetal/app/src/pages/JobPosts/JobPostsForm.tsx
  
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import * as jobApi from "../../api/jobApi";
 import FileUpload from "../../components/common/FileUpload";
 import SkillList from "../../components/common/SkillList";
 import InterviewLevelsConfig from "../../components/common/InterviewLevelsConfig"; 
 import Button from "../../components/common/Button";
 import { ZodError } from "zod";
-import { Upload, Search, Loader2, Combine, Home, Building, Globe, FileText, Plus, X, TrendingUp, MapPin, Clock } from "lucide-react";
+import { Upload, Loader2, Combine, Home, Building, Globe, FileText, Plus, X, TrendingUp, MapPin, Clock } from "lucide-react";
 import { useToast } from "../../context/ModalContext";
 import * as validation from "../../utils/validation";
 import clsx from "clsx";
@@ -118,8 +118,8 @@ const JobPostsForm = ({ onCancel, jobId }: JobPostsFormProps) => {
   const [salaryMax, setSalaryMax] = useState<number>(0);
   const [displaySalaryMin, setDisplaySalaryMin] = useState<string>('');
   const [displaySalaryMax, setDisplaySalaryMax] = useState<string>('');
-  const [salaryMinUnit, setSalaryMinUnit] = useState<'none'|'k'|'l'|'c'>('none');
-  const [salaryMaxUnit, setSalaryMaxUnit] = useState<'none'|'k'|'l'|'c'>('none');
+  const [, setSalaryMinUnit] = useState<'none'|'k'|'l'|'c'>('none');
+  const [, setSalaryMaxUnit] = useState<'none'|'k'|'l'|'c'>('none');
   const [salaryMinSuffix, setSalaryMinSuffix] = useState<string>('');
   const [salaryMaxSuffix, setSalaryMaxSuffix] = useState<string>('');
   const [salaryMinOpen, setSalaryMinOpen] = useState<boolean>(false);
@@ -146,7 +146,7 @@ const JobPostsForm = ({ onCancel, jobId }: JobPostsFormProps) => {
   const [interviewLevels, setInterviewLevels] = useState<InterviewLevel[]>(DEFAULT_INTERVIEW_LEVELS);
   const [agentConfigs, setAgentConfigs] = useState<Array<any>>([]);
 
-  const [activateOnCareer, setActivateOnCareer] = useState<boolean>(true);
+  const [, setActivateOnCareer] = useState<boolean>(true);
   const [careerActivationMode, setCareerActivationMode] = useState<'days' | 'shortlist' | 'manual'>('manual');
   const [careerActivationDays, setCareerActivationDays] = useState<number>(DEFAULT_EXPIRATION_OFFSET_DAYS);
   const [careerShortlistThreshold, setCareerShortlistThreshold] = useState<number>(0);
@@ -334,6 +334,19 @@ const JobPostsForm = ({ onCancel, jobId }: JobPostsFormProps) => {
         key_skills: ac.key_skills || ac.keySkills || [],
         custom_questions: ac.custom_questions || ac.customQuestions || [],
         forbidden_topics: ac.forbidden_topics || ac.forbiddenTopics || [],
+        coding_enabled: Boolean(ac.coding_enabled ?? ac.codingEnabled ?? false),
+        coding_question_mode: ac.coding_question_mode || ac.codingQuestionMode || 'ai',
+        coding_difficulty: ac.coding_difficulty || ac.codingDifficulty || 'medium',
+        coding_languages: ac.coding_languages || ac.codingLanguages || ['python'],
+        provided_coding_question: ac.provided_coding_question || ac.providedCodingQuestion || '',
+        coding_test_case_mode: ac.coding_test_case_mode || ac.codingTestCaseMode || 'provided',
+        coding_test_cases: ac.coding_test_cases || ac.codingTestCases || [],
+        coding_starter_code: ac.coding_starter_code || ac.codingStarterCode || {},
+        mcq_enabled: Boolean(ac.mcq_enabled ?? ac.mcqEnabled ?? false),
+        mcq_question_mode: ac.mcq_question_mode || ac.mcqQuestionMode || 'provided',
+        mcq_difficulty: ac.mcq_difficulty || ac.mcqDifficulty || 'medium',
+        mcq_questions: ac.mcq_questions || ac.mcqQuestions || [],
+        mcq_passing_score: Number(ac.mcq_passing_score ?? ac.mcqPassingScore ?? 60) || 60,
       })));
     } else {
       const levels = hasApiLevels
@@ -353,6 +366,19 @@ const JobPostsForm = ({ onCancel, jobId }: JobPostsFormProps) => {
         key_skills: [],
         custom_questions: [],
         forbidden_topics: [],
+        coding_enabled: false,
+        coding_question_mode: 'ai',
+        coding_difficulty: 'medium',
+        coding_languages: ['python'],
+        provided_coding_question: '',
+        coding_test_case_mode: 'provided',
+        coding_test_cases: [],
+        coding_starter_code: {},
+        mcq_enabled: false,
+        mcq_question_mode: 'provided',
+        mcq_difficulty: 'medium',
+        mcq_questions: [],
+        mcq_passing_score: 60,
       })));
     }
 
@@ -503,8 +529,12 @@ const JobPostsForm = ({ onCancel, jobId }: JobPostsFormProps) => {
 
           if (createdJob) {
             setUploadStatus("Upload successful. Job created.");
-            try { window.localStorage.setItem('career_jobs_refresh', String(Date.now())); } catch (e) {}
-            try { window.dispatchEvent(new CustomEvent('career_jobs_refresh')); } catch (e) {}
+            try { window.localStorage.setItem('career_jobs_refresh', String(Date.now())); } catch {
+              // no-op
+            }
+            try { window.dispatchEvent(new CustomEvent('career_jobs_refresh')); } catch {
+              // no-op
+            }
             onCancel();
           } else {
             setUploadStatus("Upload successful. No extracted details returned.");
@@ -660,6 +690,19 @@ const JobPostsForm = ({ onCancel, jobId }: JobPostsFormProps) => {
           interviewTimeMin: ac.interview_time_min || ac.interviewTimeMin || undefined,
           interviewTimeMax: ac.interview_time_max || ac.interviewTimeMax || undefined,
           interviewerId: ac.interviewer_id || ac.interviewerId || undefined,
+          codingEnabled: Boolean(ac.coding_enabled ?? ac.codingEnabled ?? false),
+          codingQuestionMode: ac.coding_question_mode || ac.codingQuestionMode || 'ai',
+          codingDifficulty: ac.coding_difficulty || ac.codingDifficulty || 'medium',
+          codingLanguages: ac.coding_languages || ac.codingLanguages || ['python'],
+          providedCodingQuestion: ac.provided_coding_question || ac.providedCodingQuestion || '',
+          codingTestCaseMode: ac.coding_test_case_mode || ac.codingTestCaseMode || 'provided',
+          codingTestCases: ac.coding_test_cases || ac.codingTestCases || [],
+          codingStarterCode: ac.coding_starter_code || ac.codingStarterCode || {},
+          mcqEnabled: Boolean(ac.mcq_enabled ?? ac.mcqEnabled ?? false),
+          mcqQuestionMode: ac.mcq_question_mode || ac.mcqQuestionMode || 'provided',
+          mcqDifficulty: ac.mcq_difficulty || ac.mcqDifficulty || 'medium',
+          mcqQuestions: ac.mcq_questions || ac.mcqQuestions || [],
+          mcqPassingScore: Number(ac.mcq_passing_score ?? ac.mcqPassingScore ?? 60) || 60,
         })),
       };
       
@@ -670,10 +713,14 @@ const JobPostsForm = ({ onCancel, jobId }: JobPostsFormProps) => {
         
         try {
           window.localStorage.setItem('career_jobs_refresh', String(Date.now()));
-        } catch (e) { }
+        } catch {
+          // no-op
+        }
         try {
           window.dispatchEvent(new CustomEvent('career_jobs_refresh'));
-        } catch (e) { }
+        } catch {
+          // no-op
+        }
 
         setTimeout(() => {
           onCancel();
@@ -739,13 +786,6 @@ const JobPostsForm = ({ onCancel, jobId }: JobPostsFormProps) => {
     }
   }, [skills]);
   
-  const canAnalyze = useMemo(() => {
-    const hasTitle = jobTitle.trim().length > 0;
-    const hasDescription = jobDescription.trim().length > 0;
-    const hasFunctionalities = keyFunctionalities.some(kf => kf.description.trim().length > 0);
-    return hasTitle && (hasDescription || hasFunctionalities);
-  }, [jobTitle, jobDescription, keyFunctionalities]);
- 
   if (isDataLoading) {
     return (
         <div className="flex flex-col items-center justify-center h-96">
@@ -1543,7 +1583,9 @@ const JobPostsForm = ({ onCancel, jobId }: JobPostsFormProps) => {
                       const then = new Date(e.target.value);
                       const diffDays = Math.max(1, Math.round((then.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
                       setCareerActivationDays(diffDays);
-                    } catch {}
+                    } catch {
+                      // no-op
+                    }
                   }}
                   className={`w-full bg-white border-2 rounded-lg px-4 py-3 text-base focus:outline-none focus:border-indigo-400 transition-all duration-200 ${
                     errors.active_till ? 'border-red-400 bg-red-50/30' : 'border-gray-200 hover:border-gray-300'

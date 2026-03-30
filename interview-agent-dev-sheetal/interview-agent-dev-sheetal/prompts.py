@@ -34,6 +34,11 @@ def build_enhanced_interview_instructions(
     key_skills_from_config = round_data.get('key_skills', []) # string[]
     custom_questions = round_data.get('custom_questions', []) # string[]
     forbidden_topics = round_data.get('forbidden_topics', []) # string[]
+    coding_enabled = bool(round_data.get('coding_enabled', False))
+    coding_question_mode = (round_data.get('coding_question_mode') or 'ai').lower()
+    coding_difficulty = round_data.get('coding_difficulty', 'medium')
+    coding_languages = round_data.get('coding_languages') or ['python']
+    provided_coding_question = (round_data.get('provided_coding_question') or '').strip()
     # --- END NEW ---
     
     round_context = f"This is the **{round_name}**."
@@ -59,6 +64,39 @@ def build_enhanced_interview_instructions(
         forbidden_topics_context = "\n## FORBIDDEN TOPICS\n"
         forbidden_topics_context += "You MUST NOT discuss or ask about the following topics:\n"
         forbidden_topics_context += "\n".join(f"- {t}" for t in forbidden_topics)
+
+    if coding_enabled:
+        if coding_question_mode == 'provided' and provided_coding_question:
+            coding_phase_context = f"""
+## 3. Live Coding Session (Phase 3)
+* **Transition:** When discussion is sufficient, transition to coding.
+* **Setup:** Ask candidate to share screen, open IDE, and confirm "ready".
+* **PROBLEM SOURCE:** Use the configured problem below exactly.
+    * **Question:** {provided_coding_question}
+* **Action:** Ask candidate to explain approach before coding.
+* **Guidance:** Provide hints only when needed; do not reveal full solution.
+"""
+        else:
+            coding_phase_context = f"""
+## 3. Live Coding Session (Phase 3)
+* **Transition:** When discussion is sufficient, transition to coding.
+* **Setup:** Ask candidate to share screen, open IDE, and confirm "ready".
+* **PROBLEM GENERATION:** Generate one coding problem.
+    * Difficulty target: **{coding_difficulty}**
+    * Language options: **{', '.join(coding_languages)}**
+    * Skills alignment: **{', '.join(skills_to_probe)}**
+* **Action:** Ask candidate to explain approach before coding.
+* **Guidance:** Provide hints only when needed; do not reveal full solution.
+"""
+        ready_cue_instruction = "This is your cue. Start the coding problem instruction flow."
+    else:
+        coding_phase_context = """
+## 3. Coding Session (Skipped)
+* Coding challenge is disabled for this round.
+* Continue technical conversation without live coding.
+* Move directly to wrap-up after the discussion objectives are met.
+"""
+        ready_cue_instruction = "Coding is disabled for this round. Continue discussion and proceed to wrap-up."
 
     # This is the core instruction set.
     return f"""
@@ -97,14 +135,7 @@ You are "{persona.title()}", an expert AI interviewer for {company_name}. You ar
 * **Mandatory Questions:** You MUST ask all questions from the **MANDATORY CUSTOM QUESTIONS** section if it exists.
 * **Use Context:** Use the **Resume/Profile Summary** to ask specific, probing questions.
 
-## 3. Live Coding Session (Phase 3)
-* **Transition:** When you feel the discussion is sufficient, transition to coding.
-* **Setup:** Instruct the candidate to share their screen and open their preferred IDE. Ask them to say "ready" when they are set up.
-* **PROBLEM GENERATION:** Once they confirm, **YOU MUST GENERATE a new, unique coding problem.**
-    * The problem must be appropriate for a **{job_level.title()}** candidate.
-    * It must be relevant to the **Skills to Probe** ({', '.join(skills_to_probe)}).
-    * **Action:** Present the problem clearly. Ask them to first *explain their approach* before writing code.
-* **Guidance:** While they code, provide gentle hints if they are stuck.
+{coding_phase_context}
 
 ## 4. Wrap-up & Candidate Questions (Phase 4)
 * After the coding session, transition to the end.
@@ -115,5 +146,5 @@ You are "{persona.title()}", an expert AI interviewer for {company_name}. You ar
 * **IF Candidate asks to repeat:** Politely rephrase your *last* question.
 * **IF Candidate asks to change language:** Acknowledge it (e.g., "Sorry, I must continue in {preferred_language} as per the interview guidelines.") and then repeat your last question.
 * **IF Candidate says "ready", "I'm ready", "screen shared" during coding setup:**
-    * This is your cue. Initiate the **PROBLEM GENERATION** step.
+    * {ready_cue_instruction}
 """

@@ -44,7 +44,7 @@ class ResumeProcessor(BaseProcessor):
         redis_db: str,
         status_channel: str,
         job_queue: str,
-        openai_api_key: str,
+        llm_api_key: str,
         poppler_path: Optional[str] = None,
         file_path: Optional[str] = None,
         config: Optional[AppConfig] = None,
@@ -54,7 +54,7 @@ class ResumeProcessor(BaseProcessor):
         """
         self.worker_id = str(uuid.uuid4())
         self.status_channel = status_channel or DEFAULT_STATUS_CHANNEL
-        self.openai_api_key = openai_api_key
+        self.llm_api_key = llm_api_key
         self.job_queue = job_queue
         self.poppler_path = poppler_path
         self.config = config or AppConfig()

@@ -4,6 +4,7 @@ import uuid
 import json
 import logging
 import hashlib
+import os
 
 from pathlib import Path
 from datetime import datetime
@@ -18,7 +19,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-UPLOAD_BASE_PATH = Path(r"C:\Workspace\resumes")
+
+def _resolve_upload_base_path() -> Path:
+    configured_path = (os.getenv("FILE_PATH") or "").strip()
+    if configured_path:
+        return Path(configured_path)
+
+    # Keep the existing Windows default for local development, with a Linux-safe fallback.
+    return Path(r"C:\Workspace\resumes") if os.name == "nt" else Path("/data/uploads")
+
+
+UPLOAD_BASE_PATH = _resolve_upload_base_path()
+
+
+def _resolve_resume_queue_name() -> str:
+    raw_queue = (
+        os.getenv("job_queue")
+        or os.getenv("JOB_QUEUE")
+        or "resume_queue"
+    )
+    queue_name = str(raw_queue).strip().strip('"').strip("'")
+
+    # Normalize known misconfigurations to the canonical queue used by the worker.
+    if queue_name.lower() in {"", "default_queue", "resume_queued"}:
+        return "resume_queue"
+
+    return queue_name
 
 class ResumeService:
     """Handle resume upload and queueing, allowing partial success."""
@@ -133,6 +159,7 @@ class ResumeService:
                 redis_client = await get_redis_client()
                 task_id = str(uuid.uuid4())
                 now_iso = datetime.utcnow().isoformat()
+                queue_name = _resolve_resume_queue_name()
                 
                 job_data = {
                     "task_id": task_id,
@@ -143,6 +170,7 @@ class ResumeService:
                     "updated_at": now_iso,
                     "error_message": "",
                     "saved_files": json.dumps(saved_files_list), 
+                    "queue_name": queue_name,
                 }
 
                 if form_metadata:
@@ -160,13 +188,14 @@ class ResumeService:
                         job_data["created_profiles"] = str([getattr(p, 'file_name', None) for p in created_profiles])
 
                 await redis_client.hset(f"job:{task_id}", mapping=job_data)
-                await redis_client.lpush("resume_queue", task_id)
+                await redis_client.lpush(queue_name, task_id)
                 await redis_client.close()
                 
                 result['status'] = 'success'
                 # Expose the generated task_id and saved files to the caller
                 result['task_id'] = task_id
                 result['saved_files'] = saved_files_list
+                result['queue_name'] = queue_name
                 if created_profiles:
                     # Try to extract created profile ids if available (SQLAlchemy will
                     # populate them after commit). We include placeholder info so callers

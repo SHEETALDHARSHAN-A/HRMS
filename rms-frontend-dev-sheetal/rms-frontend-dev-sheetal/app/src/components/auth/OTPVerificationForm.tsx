@@ -1,31 +1,37 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { AlertCircle, Edit3, Loader2, Mail, RotateCcw, ShieldCheck } from 'lucide-react';
 import { useAuthContext } from '../../context/AuthContext';
 import { AUTH_CONFIG } from '../../constants/auth';
-import OTPInput from './OTPInput'; 
-import { Edit, Loader2 } from 'lucide-react'; 
+import OTPInput from './OTPInput';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
-// ------------------------------------------
-// 🚀 CUSTOM HOOK: Countdown Logic (Remains the same)
-// ------------------------------------------
-const useCountdownTimer = (initialDuration: number, resendCooldownDuration: number, onExpire?: () => void) => {
+const useCountdownTimer = (
+  initialDuration: number,
+  resendCooldownDuration: number,
+  onExpire?: () => void
+) => {
   const [secondsLeft, setSecondsLeft] = useState(initialDuration);
   const [isExpired, setIsExpired] = useState(false);
 
-  const [resendCooldown, setResendCooldown] = useState(resendCooldownDuration); // Sync with RESEND_COOLDOWN_SECONDS initially
+  const [resendCooldown, setResendCooldown] = useState(resendCooldownDuration);
   const [resendTimeIsUp, setResendTimeIsUp] = useState(false);
 
   const reset = useCallback(() => {
     setSecondsLeft(initialDuration);
-    setResendCooldown(resendCooldownDuration); // Reset resend cooldown to match RESEND_COOLDOWN_SECONDS
+    setResendCooldown(resendCooldownDuration);
     setIsExpired(false);
-    setResendTimeIsUp(false); // Lock resend until OTP expires again
+    setResendTimeIsUp(false);
   }, [initialDuration, resendCooldownDuration]);
 
   useEffect(() => {
     if (secondsLeft <= 0) {
       setIsExpired(true);
-      setResendTimeIsUp(true); // Allow resend when OTP expires
-      if (onExpire) onExpire();
+      setResendTimeIsUp(true);
+      if (onExpire) {
+        onExpire();
+      }
       return;
     }
 
@@ -42,12 +48,13 @@ const useCountdownTimer = (initialDuration: number, resendCooldownDuration: numb
         setResendCooldown((prev) => {
           if (prev - 1 <= 0) {
             clearInterval(cooldownTimer);
-            setResendTimeIsUp(true); // Resend becomes available
+            setResendTimeIsUp(true);
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
+
       return () => clearInterval(cooldownTimer);
     }
   }, [resendCooldown]);
@@ -74,18 +81,8 @@ const useCountdownTimer = (initialDuration: number, resendCooldownDuration: numb
   };
 };
 
-// ------------------------------------------
-// 🖥️ OTP VERIFICATION FORM COMPONENT
-// ------------------------------------------
 const OTPVerificationForm: React.FC = () => {
-  const {
-    loading,
-    error,
-    userEmail,
-    verifyOTP,
-    resendOTP,
-    goBackToForm,
-  } = useAuthContext();
+  const { loading, error, userEmail, verifyOTP, resendOTP, goBackToForm } = useAuthContext();
 
   const [otp, setOtp] = useState('');
   const [resendLoading, setResendLoading] = useState(false);
@@ -115,34 +112,29 @@ const OTPVerificationForm: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (otp.length === 6 && !isExpired && !loading) {
       setResendSuccess(null);
       setOtpError(null);
 
       try {
-        console.log('Attempting OTP verification...');
         const result = await verifyOTP(otp);
 
-        if (result && result.success) {
-          console.log('✅ OTP verification successful in form component');
-          // Success - the redirect will be handled by useAuth hook
-        } else if (result && !result.success) {
+        if (result && !result.success) {
           setVerificationAttempts((prev) => prev + 1);
           setOtpError(result.message || 'Invalid verification code. Please try again.');
-          console.error('OTP verification failed:', result.message);
         }
-      } catch (err) {
+      } catch {
         setVerificationAttempts((prev) => prev + 1);
-        console.error('OTP verification error:', err);
-
-        // Use generic error handling if API doesn't provide structured error
         setOtpError('Verification failed. Please try again or request a new code.');
       }
     }
   };
 
   const handleResend = async () => {
-    if (loading || resendLoading || !resendTimeIsUp) return;
+    if (loading || resendLoading || !resendTimeIsUp) {
+      return;
+    }
 
     setResendLoading(true);
 
@@ -159,147 +151,148 @@ const OTPVerificationForm: React.FC = () => {
         resetOTPExpiry();
         startResendCooldown(AUTH_CONFIG.RESEND_COOLDOWN_SECONDS);
 
-        setResendSuccess(result.message || 'New OTP successfully sent!');
-        setOtpError(null); // Clear any previous error
-        setVerificationAttempts(0); // Reset attempts
+        setResendSuccess(result.message || 'New OTP sent successfully.');
+        setOtpError(null);
+        setVerificationAttempts(0);
       } else {
         setOtpError(result.message || 'Failed to resend OTP.');
       }
-    } catch (error) {
-      console.error("Resend OTP failed:", error);
-      setOtpError('Error resending OTP. Please check network.');
+    } catch {
+      setOtpError('Error resending OTP. Please check your network.');
     } finally {
       setResendLoading(false);
     }
   };
 
   const handleOTPChange = (value: string) => {
-    if (otpError) setOtpError(null);
+    if (otpError) {
+      setOtpError(null);
+    }
     setOtp(value);
   };
 
-  const isVerificationLoading = loading && !resendLoading; 
-
+  const isVerificationLoading = loading && !resendLoading;
   const isSubmitDisabled = isVerificationLoading || otp.length !== 6 || isExpired;
-  
-  const isResendDisabled = loading || resendLoading || !resendTimeIsUp; 
+  const isResendDisabled = loading || resendLoading || !resendTimeIsUp;
 
   const resendLinkText = () => {
-    if (resendLoading) return <><Loader2 size={16} className="animate-spin mr-1" /> Sending...</>;
-    
+    if (resendLoading) {
+      return (
+        <>
+          <Loader2 size={14} className="mr-1 animate-spin" />
+          Sending...
+        </>
+      );
+    }
+
     if (!resendTimeIsUp) {
       return `Resend in ${formatTime(resendCooldown)}`;
     }
-    
-    return 'Resend Code';
-  }
+
+    return (
+      <>
+        <RotateCcw size={14} className="mr-1" />
+        Resend code
+      </>
+    );
+  };
 
   return (
-    <div className="w-full max-w-md sm:max-w-[453px] px-4 sm:px-0 mx-auto space-y-5">
-      <h2 className="text-lg sm:text-xl md:text-2xl font-semibold text-gray-700 mb-2" style={{ fontFamily: 'Poppins' }}>
-        {AUTH_CONFIG.CONTENT.verifyTitle}
-      </h2>
-      
-      <div className="text-sm sm:text-base text-gray-600 mb-6" style={{ fontFamily: 'Poppins' }}>
-        <div>{AUTH_CONFIG.CONTENT.otpInstruction}</div>
-        <div className="flex items-center space-x-2 mt-1">
-          <strong className="text-gray-900 font-semibold">{userEmail}</strong>
-          <button 
-             type="button" 
-             onClick={goBackToForm} 
-             className="
-               text-[var(--color-accent-orange)] hover:text-red-600 transition-colors disabled:opacity-50
-               bg-transparent p-0 border-0 shadow-none appearance-none ml-1
-               cursor-pointer inline-flex items-center text-sm
-             "
-             disabled={loading}
-             aria-label="Change email address"
-          >
-             <Edit size={16} className="mr-0.5" /> Edit
-          </button>
+    <div className="mx-auto w-full max-w-md space-y-6">
+      <div className="space-y-2">
+        <Badge variant="outline" className="border-[var(--color-primary-500)]/30 text-[var(--color-primary-500)]">
+          <ShieldCheck className="mr-1 h-3.5 w-3.5" />
+          OTP Verification
+        </Badge>
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">{AUTH_CONFIG.CONTENT.verifyTitle}</h2>
+        <p className="text-sm text-muted-foreground">{AUTH_CONFIG.CONTENT.otpInstruction}</p>
+
+        <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate text-sm font-medium text-foreground">{userEmail || 'No email selected'}</span>
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={goBackToForm} disabled={loading} className="h-8 text-xs">
+            <Edit3 className="mr-1 h-3.5 w-3.5" />
+            Change
+          </Button>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="flex justify-center">
-          <OTPInput
-            key={otpInputKey}
-            length={6}
-            value={otp}
-            onChange={handleOTPChange}
-            disabled={loading || isExpired} 
-          />
-        </div>
-        
-        {/* Resend Text Link & Countdown Timer */}
-        <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center text-sm gap-2">
-          <button 
-            type="button" 
-            onClick={handleResend}
-            disabled={isResendDisabled}
-            className="
-               flex items-center bg-transparent p-0 border-0 shadow-none appearance-none 
-               text-[var(--color-accent-orange)] hover:text-red-600 transition-colors disabled:opacity-50 
-               font-semibold cursor-pointer focus:outline-none text-sm
-            "
-          >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-3">
+          <div className="flex justify-center">
+            <OTPInput
+              key={otpInputKey}
+              length={6}
+              value={otp}
+              onChange={handleOTPChange}
+              disabled={loading || isExpired}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="link"
+              onClick={handleResend}
+              disabled={isResendDisabled}
+              className="h-auto p-0 text-[var(--color-primary-500)] hover:text-[var(--color-primary-600)]"
+            >
               {resendLinkText()}
-          </button>
-
-          <p className={isExpired ? 'text-red-600 font-bold' : 'text-gray-600 font-medium'}>
-              {isExpired ? 'OTP Expired' : `Expires in: ${formatTime(secondsLeft)}`}
-          </p>
+            </Button>
+            <Badge variant={isExpired ? 'destructive' : 'secondary'} className="font-medium">
+              {isExpired ? 'OTP expired' : `Expires in ${formatTime(secondsLeft)}`}
+            </Badge>
+          </div>
         </div>
-        
 
-        {/* Error/Message */}
         {(error || otpError) && (
-            <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg border border-red-200" role="alert">
-                {otpError || error}
-                {verificationAttempts >= MAX_ATTEMPTS && (
-                    <div className="mt-2 font-medium">
-                        Having trouble? <button 
-                            type="button"
-                            onClick={handleResend}
-                            disabled={isResendDisabled}
-                            className="text-[var(--color-accent-orange)] underline hover:text-red-600 disabled:opacity-50"
-                        >
-                            Request a new code
-                        </button>
-                    </div>
-                )}
-            </div>
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Verification failed</AlertTitle>
+            <AlertDescription>
+              {otpError || error}
+              {verificationAttempts >= MAX_ATTEMPTS && (
+                <span className="ml-1">
+                  Need a new code?
+                  <Button
+                    type="button"
+                    variant="link"
+                    onClick={handleResend}
+                    disabled={isResendDisabled}
+                    className="ml-1 h-auto p-0 align-baseline"
+                  >
+                    Request now
+                  </Button>
+                </span>
+              )}
+            </AlertDescription>
+          </Alert>
         )}
 
-        {/* Resend Success Toast */}
         {resendSuccess && (
-            <div className="text-green-600 text-sm bg-green-50 p-3 rounded-lg border border-green-200 shadow-lg" role="status">
-                {resendSuccess}
-            </div>
+          <Alert className="border-emerald-200 text-emerald-700 [&_svg]:text-emerald-600">
+            <ShieldCheck className="h-4 w-4" />
+            <AlertTitle>Code sent</AlertTitle>
+            <AlertDescription>{resendSuccess}</AlertDescription>
+          </Alert>
         )}
 
-        {/* Continue Button with Loading Spinner */}
-    <button 
-      type="submit" 
-      disabled={isSubmitDisabled} 
-      className={`
-        w-full h-12 sm:h-14 rounded-xl text-white font-semibold text-lg tracking-wider 
-        shadow-lg hover:bg-[var(--color-primary-600)] transition-colors duration-200
-        disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center
-      `}
-      style={{
-        fontFamily: 'Poppins',
-        backgroundColor: 'var(--color-primary-500)',
-        boxShadow: '0px 4px 19px rgba(1,107,174,0.3)',
-      }}
-    >
-            {isVerificationLoading ? (
-                <div className="flex items-center justify-center space-x-2">
-                    <Loader2 size={20} className="animate-spin" />
-                    <span>Verifying your code...</span>
-                </div>
-            ) : AUTH_CONFIG.CONTENT.continueButton}
-        </button>
+        <Button
+          type="submit"
+          disabled={isSubmitDisabled}
+          className="h-11 w-full bg-[var(--color-primary-500)] text-white hover:bg-[var(--color-primary-600)]"
+        >
+          {isVerificationLoading ? (
+            <span className="flex items-center justify-center gap-2">
+              <Loader2 size={16} className="animate-spin" />
+              Verifying code...
+            </span>
+          ) : (
+            AUTH_CONFIG.CONTENT.continueButton
+          )}
+        </Button>
       </form>
     </div>
   );

@@ -1,13 +1,13 @@
 // rms-frontend-dev-sheetal/app/src/pages/Public/AboutUsPage.tsx
 import React from 'react';
 import PublicLayout from '../../components/layout/PublicLayout';
-import { Building, Target, Users, Eye } from 'lucide-react';
+import { Building, Target, Eye } from 'lucide-react';
 
 const AboutUsPage: React.FC = () => {
   return (
     <PublicLayout
       // 💡 Title/Subtitle are now passed but will be hidden
-      bannerTitle="About PRAYAG.AI"
+      bannerTitle="About "
       bannerSubtitle="Innovation and Excellence in Recruitment Technology"
       // 💡 NEW: This prop hides the hero text for a cleaner static page
       showHeroContent={false} 
@@ -30,7 +30,7 @@ const AboutUsPage: React.FC = () => {
           <section>
             <h2 className="text-3xl font-bold text-gray-900 mb-4">Our Story</h2>
             <p className="text-gray-600 leading-relaxed mb-4">
-              Founded on the principle of innovation, PRAYAG.AI was born from a desire to solve the most persistent challenges in talent acquisition. We saw brilliant candidates getting lost in outdated systems and talented recruiters spending more time on administrative tasks than on human connection.
+              Founded on the principle of innovation, Our company was born from a desire to solve the most persistent challenges in talent acquisition. We saw brilliant candidates getting lost in outdated systems and talented recruiters spending more time on administrative tasks than on human connection.
             </p>
             <p className="text-gray-600 leading-relaxed">
               We set out to build an intelligent, AI-powered platform that streamlines the entire recruitment lifecycle—from smart sourcing and automated screening to seamless onboarding. Our mission is to empower organizations to hire top talent faster, with greater precision, and a better experience for everyone involved.

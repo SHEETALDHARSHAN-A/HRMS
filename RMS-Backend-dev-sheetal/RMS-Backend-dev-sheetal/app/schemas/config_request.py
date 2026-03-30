@@ -52,6 +52,19 @@ class AgentRoundConfigUpdate(BaseModel):
     keySkills: List[str] = Field(default_factory=list)
     customQuestions: List[str] = Field(default_factory=list)
     forbiddenTopics: List[str] = Field(default_factory=list)
+    codingEnabled: bool = Field(default=False, description="Enable coding challenge for this round")
+    codingQuestionMode: str = Field(default="ai", description="Question source mode: 'ai' or 'provided'")
+    codingDifficulty: str = Field(default="medium", description="Coding difficulty: easy/medium/hard")
+    codingLanguages: List[str] = Field(default_factory=lambda: ["python"], description="Allowed submission languages")
+    providedCodingQuestion: Optional[str] = Field(None, description="Admin-provided coding question text")
+    codingTestCaseMode: str = Field(default="provided", description="Coding test-case source mode: 'ai' or 'provided'")
+    codingTestCases: List[Dict[str, Any]] = Field(default_factory=list, description="Configured coding test cases")
+    codingStarterCode: Dict[str, str] = Field(default_factory=dict, description="Optional starter code by language")
+    mcqEnabled: bool = Field(default=False, description="Enable MCQ challenge for this round")
+    mcqQuestionMode: str = Field(default="provided", description="MCQ source mode: 'ai' or 'provided'")
+    mcqDifficulty: str = Field(default="medium", description="MCQ difficulty: easy/medium/hard")
+    mcqQuestions: List[Dict[str, Any]] = Field(default_factory=list, description="MCQ question bank with options")
+    mcqPassingScore: int = Field(default=60, ge=0, le=100, description="Passing score percentage for MCQ challenge")
 
     class Config:
         from_attributes = True # Allow easy conversion from ORM objects

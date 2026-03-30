@@ -1,0 +1,22 @@
+# VCS and editor
+.git
+.gitignore
+.vscode
+.idea
+
+# Node artifacts
+node_modules
+app/node_modules
+dist
+app/dist
+build
+*.tsbuildinfo
+
+# Local env and logs
+.env
+.env.*
+*.log
+
+# Misc
+.DS_Store
+Thumbs.db

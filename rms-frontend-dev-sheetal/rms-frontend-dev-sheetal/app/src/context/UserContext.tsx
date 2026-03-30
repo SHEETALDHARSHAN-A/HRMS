@@ -97,7 +97,7 @@ export const useUser = () => {
     // issues (e.g., during HMR or an accidental render outside the provider).
     // NOTE: This masks the root cause; prefer fixing the provider mount order.
     // Keep the error message to help developers find the issue in logs.
-    // eslint-disable-next-line no-console
+     
     console.warn('useUser called outside of UserProvider — returning safe default. Ensure components are wrapped by <UserProvider>.');
     return SAFE_USER_CONTEXT;
   }
