@@ -93,8 +93,8 @@ output_structure = """
         "job_title": Extracted job title (type -> string),
         "job_description": Extracted job decsription (type -> string),
         "skills_required":[
-            {"skill": "skill_name1"(type -> string), "weightage": weightage_number(0 to 10)(type -> Integer)},
-            {"skill": "skill_name2"(type -> string), "weightage": weightage_number(0 to 10)(type -> Integer)},
+            {"skill": "skill1"(type -> string), "weightage": weightage_number(1 to 10)(type -> Integer)},
+            {"skill": "skill2"(type -> string), "weightage": weightage_number(1 to 10)(type -> Integer)},
             ...
         ]
         "job_location": extracted location (type -> string),
@@ -132,7 +132,7 @@ prompt_template ="""
 
             **note**:Dont include (front-end development, back-end devlopement, etc.) , Only give the individual professional skills for the job title, which were mentioned job description.
 
-            location: Extract the exact Office location they wanted in the job details,(if specified)
+            job_location: Extract the exact Office location they wanted in the job details,(if specified)
             work_from_home: If they mentioned the job there are taking for 'work from home' and 'hybrid' in job details then true else false.
             min_experience: Extract the minumum experience which they have mentioned in the job details or analyze and give a minimum experience.
             max_experience: Extract the maximum experience which they have mentioned in the job details or analyze and give a maximum experience.

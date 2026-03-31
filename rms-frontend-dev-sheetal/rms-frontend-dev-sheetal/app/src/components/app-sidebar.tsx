@@ -36,7 +36,7 @@ const KNOWN_ROLES: UserRole[] = ['ADMIN', 'SUPER_ADMIN', 'HR', 'CANDIDATE'];
 const navItems: AppNavItem[] = [
   { title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard', roles: ALL_ADMIN_ROLES, section: 'main' },
   { title: 'My Job Posts', icon: Briefcase, url: '/jobs/my-jobs', roles: ALL_ADMIN_ROLES, section: 'main' },
-  { title: 'All Job Posts', icon: Users, url: '/jobs/all-jobs', roles: ALL_ADMIN_ROLES, section: 'main' },
+  { title: 'Job Posts by others', icon: Users, url: '/jobs/all-jobs', roles: ALL_ADMIN_ROLES, section: 'main' },
   { title: 'Job Recruitment', icon: BarChart3, url: '/job-recruitment', roles: ALL_ADMIN_ROLES, section: 'main' },
   { title: 'Interview Results', icon: MessageCircle, url: '/interview-results', roles: ALL_ADMIN_ROLES, section: 'main' },
   { title: 'Interview Agent', icon: Headset, url: '/interview-agent', roles: ALL_ADMIN_ROLES, section: 'main' },

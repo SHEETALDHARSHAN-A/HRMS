@@ -111,6 +111,7 @@ class CodingService:
         submitted_answers: Optional[List[Dict[str, str]]] = None
         submission_language = "mcq"
         submission_code = ""
+        selected_question_payload = question_payload
 
         if challenge_type == "mcq":
             submitted_answers = [
@@ -138,8 +139,12 @@ class CodingService:
                 )
 
             submission_language = requested_language
-            evaluation = await self._evaluate_coding_submission(
+            selected_question_payload = self._select_coding_question_payload(
                 question_payload=question_payload,
+                requested_question_id=getattr(request, "questionId", None),
+            )
+            evaluation = await self._evaluate_coding_submission(
+                question_payload=selected_question_payload,
                 code=submission_code,
                 language=submission_language,
             )
@@ -151,7 +156,7 @@ class CodingService:
             round_list_id=context["round_list_id"],
             interview_token=request.token,
             email=email,
-            question_payload=question_payload,
+            question_payload=selected_question_payload,
             challenge_type=challenge_type,
             language=submission_language,
             code=submission_code,
@@ -427,58 +432,200 @@ class CodingService:
         languages = self._normalize_languages(getattr(config, "coding_languages", None))
         provided_question = (getattr(config, "provided_coding_question", None) or "").strip()
 
+        settings = self._get_assessment_settings(config)
+        question_count = self._coerce_count(
+            settings.get("coding_question_count"),
+            default=1,
+            minimum=1,
+            maximum=20,
+        )
+        question_type = str(settings.get("coding_question_type") or "").strip().lower() or None
+        categories = self._normalize_string_list(settings.get("coding_categories"))
+        custom_prompts = self._normalize_string_list(settings.get("coding_custom_questions"))
+        if not custom_prompts:
+            custom_prompts = self._normalize_string_list(getattr(config, "custom_questions", None))
+
+        base_questions: List[Dict[str, Any]] = []
         if question_mode == "provided" and provided_question:
-            question_payload = {
-                "source": "provided",
-                "title": f"{getattr(config, 'round_name', 'Coding Round')} Challenge",
-                "problem": provided_question,
-                "constraints": [
-                    "Write clean, readable code.",
-                    "Handle invalid and edge inputs safely.",
-                ],
-                "hints": [],
-            }
-        else:
-            question_payload = await self._generate_ai_question(config=config, difficulty=difficulty, languages=languages)
+            base_questions.append(
+                self._build_custom_coding_question(
+                    prompt=provided_question,
+                    title=f"{getattr(config, 'round_name', 'Coding Round')} Challenge",
+                    source="provided",
+                    question_type=question_type,
+                    categories=categories,
+                )
+            )
+
+        for custom_prompt in custom_prompts:
+            if len(base_questions) >= question_count:
+                break
+            base_questions.append(
+                self._build_custom_coding_question(
+                    prompt=custom_prompt,
+                    title=f"Custom Coding Challenge {len(base_questions) + 1}",
+                    source="custom",
+                    question_type=question_type,
+                    categories=categories,
+                )
+            )
+
+        while len(base_questions) < question_count:
+            guidance = None
+            if len(custom_prompts) > len(base_questions):
+                guidance = custom_prompts[len(base_questions)]
+            generated_question = await self._generate_ai_question(
+                config=config,
+                difficulty=difficulty,
+                languages=languages,
+                question_type=question_type,
+                categories=categories,
+                custom_guidance=guidance,
+                question_index=len(base_questions) + 1,
+                question_count=question_count,
+            )
+            base_questions.append(generated_question)
 
         test_case_mode = (getattr(config, "coding_test_case_mode", "provided") or "provided").lower()
         configured_test_cases = self._normalize_test_cases(getattr(config, "coding_test_cases", None))
-
-        if test_case_mode == "provided" and configured_test_cases:
-            test_cases = configured_test_cases
-        else:
-            generated = await self._generate_ai_test_cases(
-                question_payload=question_payload,
-                language=languages[0],
-                difficulty=difficulty,
-            )
-            test_cases = generated or configured_test_cases or self._default_test_cases()
 
         starter_code = self._build_starter_code(
             languages=languages,
             configured_starter=getattr(config, "coding_starter_code", None),
         )
 
-        question_payload["difficulty"] = difficulty
-        question_payload["languages"] = languages
-        question_payload["questionMode"] = question_mode
-        question_payload["testCaseMode"] = test_case_mode
-        question_payload["testCases"] = test_cases
-        question_payload["starterCode"] = starter_code
-        return question_payload
+        question_pool: List[Dict[str, Any]] = []
+        for idx, raw_question in enumerate(base_questions):
+            normalized_question = {
+                "id": str(raw_question.get("id") or f"coding_q_{idx + 1}"),
+                "source": str(raw_question.get("source") or "ai"),
+                "title": str(raw_question.get("title") or f"Coding Challenge {idx + 1}"),
+                "problem": str(raw_question.get("problem") or "Solve the coding task."),
+                "constraints": [
+                    str(item).strip()
+                    for item in (raw_question.get("constraints") or [])
+                    if str(item).strip()
+                ],
+                "hints": [
+                    str(item).strip()
+                    for item in (raw_question.get("hints") or [])
+                    if str(item).strip()
+                ],
+            }
+
+            if not normalized_question["constraints"]:
+                normalized_question["constraints"] = [
+                    "Write clean, readable code.",
+                    "Handle invalid and edge inputs safely.",
+                ]
+
+            if test_case_mode == "provided" and configured_test_cases:
+                test_cases = configured_test_cases
+            else:
+                generated = await self._generate_ai_test_cases(
+                    question_payload=normalized_question,
+                    language=languages[0],
+                    difficulty=difficulty,
+                )
+                test_cases = generated or configured_test_cases or self._default_test_cases()
+
+            normalized_question["difficulty"] = difficulty
+            normalized_question["languages"] = languages
+            normalized_question["questionMode"] = question_mode
+            normalized_question["testCaseMode"] = test_case_mode
+            normalized_question["testCases"] = test_cases
+            normalized_question["starterCode"] = starter_code
+            normalized_question["questionType"] = question_type
+            normalized_question["categories"] = categories
+            question_pool.append(normalized_question)
+
+        if not question_pool:
+            question_pool.append(
+                {
+                    "id": "coding_q_1",
+                    "source": "fallback",
+                    "title": "Coding Challenge",
+                    "problem": "Solve the coding task.",
+                    "constraints": ["Handle edge cases and invalid input."],
+                    "hints": [],
+                    "difficulty": difficulty,
+                    "languages": languages,
+                    "questionMode": question_mode,
+                    "testCaseMode": test_case_mode,
+                    "testCases": configured_test_cases or self._default_test_cases(),
+                    "starterCode": starter_code,
+                    "questionType": question_type,
+                    "categories": categories,
+                }
+            )
+
+        active_question = dict(question_pool[0])
+        active_question["questionPool"] = question_pool
+        active_question["questionCountConfigured"] = question_count
+        active_question["questionType"] = question_type
+        active_question["questionCategories"] = categories
+        active_question["customQuestionPrompts"] = custom_prompts
+        return active_question
 
     async def _build_mcq_question(self, config: AgentRoundConfig) -> Dict[str, Any]:
         question_mode = (getattr(config, "mcq_question_mode", "provided") or "provided").lower()
         difficulty = (getattr(config, "mcq_difficulty", "medium") or "medium").lower()
         configured_questions = self._normalize_mcq_questions(getattr(config, "mcq_questions", None))
 
-        if question_mode == "provided" and configured_questions:
-            questions = configured_questions
+        settings = self._get_assessment_settings(config)
+        question_count = self._coerce_count(
+            settings.get("mcq_question_count"),
+            default=5,
+            minimum=1,
+            maximum=100,
+        )
+        question_type = str(settings.get("mcq_question_type") or "").strip().lower() or None
+        categories = self._normalize_string_list(settings.get("mcq_categories"))
+
+        raw_custom_mcq = settings.get("mcq_custom_questions")
+        custom_question_bank = self._normalize_mcq_questions(raw_custom_mcq)
+        custom_prompts: List[str] = []
+        if isinstance(raw_custom_mcq, list):
+            for item in raw_custom_mcq:
+                if isinstance(item, str) and item.strip():
+                    custom_prompts.append(item.strip())
+
+        if question_mode == "provided":
+            questions = custom_question_bank or configured_questions
             source = "provided"
+            if len(questions) < question_count and custom_prompts:
+                generated_questions = await self._generate_ai_mcq_questions(
+                    config=config,
+                    difficulty=difficulty,
+                    question_count=question_count - len(questions),
+                    question_type=question_type,
+                    categories=categories,
+                    custom_prompts=custom_prompts,
+                )
+                if generated_questions:
+                    questions = questions + generated_questions
         else:
-            generated_questions = await self._generate_ai_mcq_questions(config=config, difficulty=difficulty)
-            questions = generated_questions or configured_questions or self._fallback_mcq_questions()
+            generated_questions = await self._generate_ai_mcq_questions(
+                config=config,
+                difficulty=difficulty,
+                question_count=question_count,
+                question_type=question_type,
+                categories=categories,
+                custom_prompts=custom_prompts,
+            )
+            questions = generated_questions or custom_question_bank or configured_questions
             source = "ai" if generated_questions else "provided"
+
+        if not questions:
+            questions = self._fallback_mcq_questions()
+
+        questions = self._top_up_mcq_questions(questions=questions, target_count=question_count)
+        for question in questions:
+            if not isinstance(question, dict):
+                continue
+            question.setdefault("questionType", question_type)
+            if not question.get("categories"):
+                question["categories"] = list(categories)
 
         passing_score = self._coerce_score(getattr(config, "mcq_passing_score", 60), default=60)
 
@@ -488,14 +635,30 @@ class CodingService:
             "instructions": "Choose the best answer for each question.",
             "difficulty": difficulty,
             "questionMode": question_mode,
-            "questions": questions,
+            "questionCountConfigured": question_count,
+            "questionType": question_type,
+            "questionCategories": categories,
+            "customQuestionPrompts": custom_prompts,
+            "questions": questions[:question_count],
             "passingScore": passing_score,
         }
 
-    async def _generate_ai_question(self, config: AgentRoundConfig, difficulty: str, languages: List[str]) -> Dict[str, Any]:
+    async def _generate_ai_question(
+        self,
+        config: AgentRoundConfig,
+        difficulty: str,
+        languages: List[str],
+        question_type: Optional[str] = None,
+        categories: Optional[List[str]] = None,
+        custom_guidance: Optional[str] = None,
+        question_index: int = 1,
+        question_count: int = 1,
+    ) -> Dict[str, Any]:
         skills = getattr(config, "key_skills", None) or []
         focus = getattr(config, "round_focus", None) or "data structures and problem solving"
         primary_skill = skills[0] if skills else "problem solving"
+        category_text = ", ".join(categories or []) or "general"
+        type_text = question_type or "problem solving"
 
         fallback_question = {
             "source": "ai",
@@ -512,6 +675,8 @@ class CodingService:
                 "Start with a brute-force approach, then optimize.",
                 "Think through edge cases before coding.",
             ],
+            "questionType": type_text,
+            "categories": categories or [],
         }
 
         if not self._can_call_groq():
@@ -530,6 +695,10 @@ Context:
 - Priority skills: {', '.join(skills) if skills else 'general coding'}
 - Difficulty: {difficulty}
 - Allowed languages: {', '.join(languages)}
+- Question number: {question_index} of {question_count}
+- Question type: {type_text}
+- Categories: {category_text}
+- Custom guidance: {custom_guidance or 'none'}
 
 Return only valid JSON.
 """
@@ -551,6 +720,8 @@ Return only valid JSON.
             parsed["source"] = "ai"
             parsed.setdefault("constraints", fallback_question["constraints"])
             parsed.setdefault("hints", fallback_question["hints"])
+            parsed["questionType"] = type_text
+            parsed["categories"] = categories or []
             return parsed
         except Exception as exc:
             logger.warning("Groq question generation failed, using fallback question: %s", exc)
@@ -607,16 +778,28 @@ Constraints:
             logger.warning("Groq test-case generation failed: %s", exc)
             return []
 
-    async def _generate_ai_mcq_questions(self, config: AgentRoundConfig, difficulty: str) -> List[Dict[str, Any]]:
+    async def _generate_ai_mcq_questions(
+        self,
+        config: AgentRoundConfig,
+        difficulty: str,
+        question_count: int = 5,
+        question_type: Optional[str] = None,
+        categories: Optional[List[str]] = None,
+        custom_prompts: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
         if not self._can_call_groq():
             return []
 
         skills = getattr(config, "key_skills", None) or []
         focus = getattr(config, "round_focus", None) or "core fundamentals"
+        question_count = self._coerce_count(question_count, default=5, minimum=1, maximum=100)
+        type_text = question_type or "objective"
+        category_text = ", ".join(categories or []) or "general aptitude"
+        custom_text = ", ".join(custom_prompts or []) or "none"
         client = AsyncGroq(api_key=settings.effective_groq_api_key)
 
         prompt = f"""
-Generate 5 MCQ interview questions as strict JSON object with key `questions`.
+Generate {question_count} MCQ interview questions as strict JSON object with key `questions`.
 
 Each item in questions must include:
 - question (string)
@@ -628,6 +811,9 @@ Context:
 - Round focus: {focus}
 - Skills: {', '.join(skills) if skills else 'general aptitude and technical basics'}
 - Difficulty: {difficulty}
+- Question type: {type_text}
+- Categories: {category_text}
+- Custom prompts to include: {custom_text}
 """
 
         try:
@@ -644,7 +830,7 @@ Context:
             parsed = self._extract_json(content)
             if not parsed:
                 return []
-            return self._normalize_mcq_questions(parsed.get("questions"))
+            return self._normalize_mcq_questions(parsed.get("questions"))[:question_count]
         except Exception as exc:
             logger.warning("Groq MCQ generation failed: %s", exc)
             return []
@@ -894,7 +1080,6 @@ Test cases:
                 **fallback,
                 "source": "heuristic-quality",
             }
-
         client = AsyncGroq(api_key=settings.effective_groq_api_key)
         prompt = f"""
 Evaluate this coding submission and return strict JSON with keys:
@@ -953,6 +1138,43 @@ Return only valid JSON.
                 **fallback,
                 "source": "heuristic-quality",
             }
+
+    def _select_coding_question_payload(
+        self,
+        *,
+        question_payload: Dict[str, Any],
+        requested_question_id: Optional[str],
+    ) -> Dict[str, Any]:
+        if not isinstance(question_payload, dict):
+            return {}
+
+        pool = question_payload.get("questionPool")
+        if not isinstance(pool, list) or not pool:
+            return question_payload
+
+        requested = str(requested_question_id or "").strip()
+        selected = None
+        if requested:
+            for question in pool:
+                if not isinstance(question, dict):
+                    continue
+                if str(question.get("id") or "").strip() == requested:
+                    selected = question
+                    break
+
+        if selected is None:
+            selected = pool[0] if isinstance(pool[0], dict) else None
+
+        if selected is None:
+            return question_payload
+
+        selected_payload = dict(selected)
+        selected_payload["challengeType"] = "coding"
+        selected_payload["questionCountConfigured"] = question_payload.get("questionCountConfigured")
+        selected_payload["questionType"] = question_payload.get("questionType")
+        selected_payload["questionCategories"] = question_payload.get("questionCategories")
+        selected_payload["selectedQuestionId"] = selected_payload.get("id")
+        return selected_payload
 
     def _evaluate_mcq_submission(self, question_payload: Dict[str, Any], mcq_answers: List[Dict[str, str]]) -> Dict[str, Any]:
         questions = self._normalize_mcq_questions(question_payload.get("questions"))
@@ -1076,6 +1298,81 @@ Return only valid JSON.
             },
         }
 
+    def _get_assessment_settings(self, config: AgentRoundConfig) -> Dict[str, Any]:
+        score_distribution = getattr(config, "score_distribution", None)
+        if not isinstance(score_distribution, dict):
+            return {}
+
+        settings = score_distribution.get("assessment_settings")
+        if not isinstance(settings, dict):
+            return {}
+
+        return settings
+
+    @staticmethod
+    def _normalize_string_list(raw: Optional[Any]) -> List[str]:
+        if not isinstance(raw, list):
+            return []
+
+        normalized: List[str] = []
+        for item in raw:
+            text = str(item or "").strip()
+            if text:
+                normalized.append(text)
+        return normalized
+
+    @staticmethod
+    def _coerce_count(raw_count: Any, default: int, minimum: int, maximum: int) -> int:
+        try:
+            value = int(raw_count)
+        except Exception:
+            value = default
+        if value < minimum:
+            return minimum
+        if value > maximum:
+            return maximum
+        return value
+
+    @staticmethod
+    def _build_custom_coding_question(
+        *,
+        prompt: str,
+        title: str,
+        source: str,
+        question_type: Optional[str],
+        categories: Optional[List[str]],
+    ) -> Dict[str, Any]:
+        return {
+            "source": source,
+            "title": title,
+            "problem": str(prompt or "").strip(),
+            "constraints": [
+                "Write clean, readable code.",
+                "Handle invalid and edge inputs safely.",
+            ],
+            "hints": [
+                "State your approach before coding.",
+            ],
+            "questionType": question_type,
+            "categories": categories or [],
+        }
+
+    def _top_up_mcq_questions(self, questions: List[Dict[str, Any]], target_count: int) -> List[Dict[str, Any]]:
+        target_count = self._coerce_count(target_count, default=5, minimum=1, maximum=100)
+        normalized = self._normalize_mcq_questions(questions)
+        if len(normalized) >= target_count:
+            return normalized[:target_count]
+
+        fallback_bank = self._fallback_mcq_questions()
+        cursor = 0
+        while len(normalized) < target_count and fallback_bank:
+            seed = dict(fallback_bank[cursor % len(fallback_bank)])
+            seed["id"] = f"q_{len(normalized) + 1}"
+            normalized.append(seed)
+            cursor += 1
+
+        return normalized[:target_count]
+
     def _normalize_languages(self, raw_languages: Optional[Any]) -> List[str]:
         if isinstance(raw_languages, list):
             cleaned: List[str] = []
@@ -1192,6 +1489,16 @@ Return only valid JSON.
                     "options": options,
                     "correctOptionId": correct_option_id,
                     "explanation": str(raw_question.get("explanation") or "").strip() or None,
+                    "questionType": str(raw_question.get("questionType") or raw_question.get("question_type") or "").strip().lower() or None,
+                    "categories": [
+                        str(item).strip()
+                        for item in (
+                            raw_question.get("categories")
+                            if isinstance(raw_question.get("categories"), list)
+                            else []
+                        )
+                        if str(item).strip()
+                    ],
                 }
             )
         return normalized
@@ -1276,6 +1583,27 @@ Return only valid JSON.
                     cleaned_case.pop("expectedOutput", None)
                 sanitized_cases.append(cleaned_case)
             public_payload["testCases"] = sanitized_cases
+
+        question_pool = public_payload.get("questionPool")
+        if isinstance(question_pool, list):
+            sanitized_pool: List[Dict[str, Any]] = []
+            for question in question_pool:
+                if not isinstance(question, dict):
+                    continue
+                cleaned_question = dict(question)
+                pool_cases = cleaned_question.get("testCases")
+                if isinstance(pool_cases, list):
+                    sanitized_pool_cases = []
+                    for case in pool_cases:
+                        if not isinstance(case, dict):
+                            continue
+                        cleaned_case = dict(case)
+                        if bool(cleaned_case.get("isHidden", False)):
+                            cleaned_case.pop("expectedOutput", None)
+                        sanitized_pool_cases.append(cleaned_case)
+                    cleaned_question["testCases"] = sanitized_pool_cases
+                sanitized_pool.append(cleaned_question)
+            public_payload["questionPool"] = sanitized_pool
         return public_payload
 
     async def _store_assessment_payload(self, token: str, email: str, payload: Dict[str, Any]) -> None:

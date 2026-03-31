@@ -96,6 +96,10 @@ class AppConfig(BaseSettings):
     INVITE_EXPIRE_MINUTES: Optional[int] = None
     INVITE_EXPIRE_SECONDS: Optional[int] = None
 
+    # Internal service hooks
+    BACKEND_BASE_URL: Optional[str] = None
+    INTERNAL_SERVICE_TOKEN: Optional[str] = None
+
     # Other Config
     DEFAULT_TENANT_ID: Optional[str] = None
 

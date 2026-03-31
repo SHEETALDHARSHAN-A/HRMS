@@ -425,9 +425,25 @@ class UploadResume:
 
                 # Duplicate Detection (Edge case)
                 file_hash = compute_hash(content)
-                if file_hash in existing_hashes:
-                    existing_profile_id = existing_hashes.get(file_hash, "unknown")
-                    raise DuplicateFileError(file.filename, existing_profile_id)
+                existing_entries = existing_hashes.get(file_hash, [])
+                if existing_entries:
+                    if is_career_app:
+                        applicant_email = (form_metadata or {}).get("applicant_email") or ""
+                        applicant_email = applicant_email.strip().lower()
+
+                        if not applicant_email:
+                            existing_profile_id = existing_entries[0].get("profile_id", "unknown")
+                            raise DuplicateFileError(file.filename, existing_profile_id)
+
+                        has_same_email = any(
+                            entry.get("email") == applicant_email for entry in existing_entries
+                        )
+                        if has_same_email:
+                            existing_profile_id = existing_entries[0].get("profile_id", "unknown")
+                            raise DuplicateFileError(file.filename, existing_profile_id)
+                    else:
+                        existing_profile_id = existing_entries[0].get("profile_id", "unknown")
+                        raise DuplicateFileError(file.filename, existing_profile_id)
 
                 # File Type Detection (Edge case)
                 filename_lower = file.filename.lower()
@@ -475,8 +491,12 @@ class UploadResume:
                     "file_hash": file_hash,
                 })
 
-                # Mark this hash as processed
-                existing_hashes[file_hash] = "pending"
+                # Mark this hash as processed for this batch
+                existing_entries = existing_hashes.setdefault(file_hash, [])
+                existing_entries.append({
+                    "profile_id": "pending",
+                    "email": (profile_email or "").strip().lower(),
+                })
 
                 # Publish success
                 await resume_processor.publish_progress(

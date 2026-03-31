@@ -26,6 +26,7 @@ class Scheduling(Base):
     interview_token = Column(UUID, unique=True, nullable=False) 
     interviewer_id = Column(UUID(as_uuid=True),nullable=True)
     scheduled_datetime = Column(DateTime(timezone=True), nullable=False)
+    interview_duration = Column(Integer, nullable=False, default=60)
     status = Column(String, nullable=False, default="scheduled") 
     rescheduled_count = Column(Integer, nullable=False, default=0)
     email_sent = Column(Boolean, nullable=False, default=False)

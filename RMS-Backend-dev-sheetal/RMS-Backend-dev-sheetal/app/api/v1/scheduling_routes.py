@@ -63,8 +63,9 @@ async def get_scheduled_interviews_route(
     summary="Reschedule an existing interview",
     response_model=StandardResponse,
     description="""
-    Reschedule an already scheduled interview using its interview token.
-    - Accepts interview token, new date and time.
+    Reschedule an already scheduled interview.
+    - Accepts either interview token, OR job_id + profile_id + round_id.
+    - Supports both candidate-side (token) and HR-side (identity) rescheduling.
     - Increments reschedule count and updates schedule status.
     - Sends updated invitation email to candidate.
     """,

@@ -1,6 +1,6 @@
 // src/pages/JobRecruitment/JobRecruitmentContent.tsx
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useToast } from '../../context/ModalContext';
 import { 
     Loader2, Briefcase, ChevronDown, RefreshCw, Calendar, X,
@@ -11,13 +11,14 @@ import CandidateListItem from '../../components/common/CandidateListItem';
 import CandidateDetailModal from '../../components/common/CandidateDetailModel';
 import ScheduleInterviewModal, { generateDefaultEmailContent, type JobTypeDetails, type ScheduleModalData } from '../../components/common/ScheduleInterviewModal';
 import CandidateStatusModal from '../../components/common/CandidateStatusModal';
+import RescheduleInterviewModal, { type RescheduleModalData } from '../../components/common/RescheduleInterviewModal';
 import clsx from 'clsx';
 import Button from '../../components/common/Button';
 
 import { useRecruitmentData } from '../../hooks/useRecruitmentData';
-import { patchCandidateStatus, scheduleInterview } from '../../api/recruitmentApi'; 
+import { patchCandidateStatus, scheduleInterview, getScheduledInterviews, rescheduleInterview } from '../../api/recruitmentApi'; 
 import { getJobPostById } from '../../api/jobApi'; 
-import type { Candidate, CandidateStatus, InterviewLevel, InterviewType, ScheduleInterviewData } from '../../api/recruitmentApi';
+import type { Candidate, CandidateStatus, InterviewLevel, InterviewType, ScheduleInterviewData, ScheduledInterview, RescheduleInterviewData } from '../../api/recruitmentApi';
 
 
 // -- MAIN JOB RECRUITMENT PAGE CONTENT COMPONENT ---
@@ -42,11 +43,37 @@ const JobRecruitmentContent: React.FC = () => {
     const [scheduleModalData, setScheduleModalData] = useState<ScheduleModalData | null>(null);
     const [isScheduling, setIsScheduling] = useState(false);
 
+    const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>([]);
+    const [scheduledLoading, setScheduledLoading] = useState(false);
+    const [rescheduleModalData, setRescheduleModalData] = useState<RescheduleModalData | null>(null);
+    const [isRescheduling, setIsRescheduling] = useState(false);
+
     const [lastActionMessage, setLastActionMessage] = useState<string | null>(null);
     const [lastErrorMessage, setLastErrorMessage] = useState<string | null>(null);
     const [actionMessageKey, setActionMessageKey] = useState(0); 
     
     const { showToast } = useToast();
+
+    const scheduledByProfileId = useMemo(() => {
+        const map = new Map<string, ScheduledInterview>();
+        scheduledInterviews.forEach(interview => {
+            map.set(interview.profile_id, interview);
+        });
+        return map;
+    }, [scheduledInterviews]);
+
+    const formatScheduleLabel = (isoString?: string) => {
+        if (!isoString) return null;
+        const parsed = new Date(isoString);
+        if (Number.isNaN(parsed.getTime())) return isoString;
+        return parsed.toLocaleString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    };
 
 
     useEffect(() => {
@@ -58,6 +85,32 @@ const JobRecruitmentContent: React.FC = () => {
             return () => clearTimeout(timer);
         }
     }, [lastActionMessage, lastErrorMessage, actionMessageKey]);
+
+    const fetchScheduled = useCallback(async (jobId: string, roundId: string) => {
+        setScheduledLoading(true);
+        try {
+            const result = await getScheduledInterviews(jobId, roundId);
+            if (result.success) {
+                setScheduledInterviews(result.data ?? []);
+            } else {
+                setScheduledInterviews([]);
+                showToast(result.error || 'Failed to load scheduled interviews.', 'error');
+            }
+        } catch (e: any) {
+            setScheduledInterviews([]);
+            showToast(e.message || 'Error loading scheduled interviews.', 'error');
+        } finally {
+            setScheduledLoading(false);
+        }
+    }, [showToast]);
+
+    useEffect(() => {
+        if (expandedJobId && selectedRoundId) {
+            fetchScheduled(expandedJobId, selectedRoundId);
+        } else {
+            setScheduledInterviews([]);
+        }
+    }, [expandedJobId, selectedRoundId, fetchScheduled]);
 
     const fetchJobDetailsForModal = useCallback(async (jobId: string): Promise<JobTypeDetails | null> => {
         try {
@@ -198,6 +251,9 @@ const JobRecruitmentContent: React.FC = () => {
                 setLastActionMessage(`Successfully scheduled ${candidateCount} interview(s) for ${currentJob?.job_title || 'the selected job'}. Emails sent.`);
                 setActionMessageKey(prev => prev + 1);
                
+                if (jobId === expandedJobId && roundId === selectedRoundId) {
+                    await fetchScheduled(jobId, roundId);
+                }
                 await fetchJobs(); 
             } else {
                 showToast(result.error || 'Failed to schedule interviews.', 'error');
@@ -207,6 +263,52 @@ const JobRecruitmentContent: React.FC = () => {
         } finally {
             setIsScheduling(false);
             setScheduleModalData(null); 
+        }
+    };
+
+    const openRescheduleModal = (candidate: Candidate) => {
+        if (!expandedJobId || !selectedRoundId) {
+            showToast('Please select a job and round before rescheduling.', 'info');
+            return;
+        }
+
+        const scheduledInterview = scheduledByProfileId.get(candidate.profile_id);
+        if (!scheduledInterview) {
+            showToast('No scheduled interview found for this candidate.', 'info');
+            return;
+        }
+
+        setRescheduleModalData({
+            candidate,
+            jobId: expandedJobId,
+            roundId: selectedRoundId,
+            scheduledInterview,
+        });
+    };
+
+    const handleRescheduleInterview = async (payload: RescheduleInterviewData) => {
+        if (!expandedJobId || !selectedRoundId) {
+            showToast('Please select a job and round before rescheduling.', 'info');
+            return;
+        }
+
+        setIsRescheduling(true);
+        try {
+            const result = await rescheduleInterview(payload);
+            const candidateName = rescheduleModalData?.candidate.candidate_name || 'Candidate';
+
+            if (result.success) {
+                setLastActionMessage(`Successfully rescheduled interview for ${candidateName}.`);
+                setActionMessageKey(prev => prev + 1);
+                await fetchScheduled(expandedJobId, selectedRoundId);
+            } else {
+                showToast(result.error || 'Failed to reschedule interview.', 'error');
+            }
+        } catch (e: any) {
+            showToast(e.message || 'Error rescheduling interview.', 'error');
+        } finally {
+            setIsRescheduling(false);
+            setRescheduleModalData(null);
         }
     };
 
@@ -370,6 +472,9 @@ const JobRecruitmentContent: React.FC = () => {
                                                 <CandidateListItem 
                                                     key={candidate.profile_id} 
                                                     candidate={candidate} 
+                                                    scheduledLabel={formatScheduleLabel(scheduledByProfileId.get(candidate.profile_id)?.scheduled_datetime)}
+                                                    canReschedule={!scheduledLoading && scheduledByProfileId.has(candidate.profile_id)}
+                                                    onRescheduleClick={() => openRescheduleModal(candidate)}
                                                     onViewDetails={() => setSelectedCandidate(candidate)}
                                                     onStatusChangeClick={() => setStatusModalCandidate(candidate)}
                                                 />
@@ -408,6 +513,17 @@ const JobRecruitmentContent: React.FC = () => {
                     onClose={() => setScheduleModalData(null)}
                     onSchedule={handleScheduleInterview}
                     isScheduling={isScheduling}
+                />
+            )}
+
+            {/* Reschedule Interview Modal */}
+            {rescheduleModalData && (
+                <RescheduleInterviewModal
+                    isOpen={!!rescheduleModalData}
+                    data={rescheduleModalData}
+                    onClose={() => setRescheduleModalData(null)}
+                    onReschedule={handleRescheduleInterview}
+                    isRescheduling={isRescheduling}
                 />
             )}
         </div>

@@ -85,21 +85,27 @@
 
 // src/components/common/CandidateListItem.tsx
 import React from 'react';
-import { Mail, Zap, Edit, Search } from 'lucide-react';
+import { Calendar, Mail, Zap, Edit, Search } from 'lucide-react';
 import clsx from 'clsx';
 import Button from './Button';
 import type { Candidate } from '../../api/recruitmentApi';
 
 interface CandidateListItemProps {
     candidate: Candidate;
+    scheduledLabel?: string | null;
+    canReschedule?: boolean;
     onViewDetails: () => void;
     onStatusChangeClick: (candidate: Candidate) => void;
+    onRescheduleClick?: () => void;
 }
 
 const CandidateListItem: React.FC<CandidateListItemProps> = ({ 
     candidate, 
+    scheduledLabel,
+    canReschedule = false,
     onViewDetails, 
-    onStatusChangeClick 
+    onStatusChangeClick,
+    onRescheduleClick
 }) => {
     const statusClasses = {
         shortlisted: 'bg-green-100 text-green-700 border-green-300',
@@ -109,6 +115,7 @@ const CandidateListItem: React.FC<CandidateListItemProps> = ({
     };
     const statusText = candidate.round_status.replace('_', ' ').split(' ').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
     const statusStyle = statusClasses[candidate.round_status];
+    const shouldShowSchedule = Boolean(scheduledLabel) || candidate.round_status === 'interview_scheduled';
 
     return (
         <div 
@@ -126,6 +133,12 @@ const CandidateListItem: React.FC<CandidateListItemProps> = ({
                         <Mail size={12} />
                         {candidate.candidate_email}
                     </p>
+                    {shouldShowSchedule && (
+                        <p className="text-xs text-indigo-600 mt-1 flex items-center gap-1">
+                            <Calendar size={12} />
+                            {scheduledLabel ? `Scheduled: ${scheduledLabel}` : 'Scheduled time pending'}
+                        </p>
+                    )}
                 </div>
             </div>
             
@@ -155,6 +168,19 @@ const CandidateListItem: React.FC<CandidateListItemProps> = ({
                         <Edit size={16} />
                     </button>
                 </div>
+
+                {canReschedule && onRescheduleClick && (
+                    <Button
+                        variant="outline"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onRescheduleClick();
+                        }}
+                        className="px-3 py-1.5 text-xs"
+                    >
+                        <Calendar size={14} /> Reschedule
+                    </Button>
+                )}
                 
                 {/* Details Button */}
                 <Button 

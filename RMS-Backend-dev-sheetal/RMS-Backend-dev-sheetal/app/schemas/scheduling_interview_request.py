@@ -26,7 +26,10 @@ class SchedulingInterviewRequest(BaseModel):
 
 
 class RescheduleInterviewRequest(BaseModel):
-    interview_token: str = Field(..., description="Interview token for the existing schedule.")
+    interview_token: str | None = Field(None, description="Interview token for the existing schedule.")
+    job_id: str | None = Field(None, description="Optional job id for HR-side rescheduling.")
+    profile_id: str | None = Field(None, description="Optional profile id for HR-side rescheduling.")
+    round_id: str | None = Field(None, description="Optional round id (round_list or interview_round instance id).")
     interview_date: date = Field(..., description="New interview date (YYYY-MM-DD)")
     interview_time: time = Field(..., description="New interview time (HH:MM:SS)")
     reason: str | None = Field(None, description="Optional reason for rescheduling.")

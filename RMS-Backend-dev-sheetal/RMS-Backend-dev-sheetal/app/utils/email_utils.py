@@ -362,6 +362,91 @@ async def send_interview_invite_email_async(
     except Exception as e:
         logger.error(f"Async wrapper failed to send interview invite: {e}")
         return False
+
+
+def _normalize_candidate_status(status: str | None) -> str:
+    raw = (status or "").strip().lower().replace(" ", "_")
+    if raw in {"shortlist", "shortlisted", "selected", "select"}:
+        return "shortlist"
+    if raw in {"reject", "rejected", "fail", "failed"}:
+        return "reject"
+    if raw in {"under_review", "underreview", "review"}:
+        return "under_review"
+    return raw or "under_review"
+
+
+def _candidate_status_template_key(status: str) -> str:
+    if status == "shortlist":
+        return "CANDIDATE_STATUS_SHORTLISTED"
+    if status == "reject":
+        return "CANDIDATE_STATUS_REJECTED"
+    return "CANDIDATE_STATUS_UNDER_REVIEW"
+
+
+async def send_candidate_status_email_async(
+    *,
+    to_email: str,
+    candidate_name: str,
+    job_title: str,
+    round_name: str,
+    status: str,
+    reason: str | None = None,
+    next_round_name: str | None = None,
+    db: AsyncSession | None = None,
+) -> bool:
+    """Send candidate status email for shortlist/reject/under_review."""
+    normalized_status = _normalize_candidate_status(status)
+    template_key = _candidate_status_template_key(normalized_status)
+    status_label = normalized_status.replace("_", " ").title()
+
+    context = {
+        "CANDIDATE_NAME": candidate_name,
+        "JOB_TITLE": job_title,
+        "ROUND_NAME": round_name,
+        "STATUS": status_label,
+        "REASON": reason or "",
+        "NEXT_ROUND_NAME": next_round_name or "Final Review",
+        "PORTAL_URL": str(getattr(settings, "frontend_url", "") or "").rstrip("/"),
+    }
+
+    rendered_subject = None
+    rendered_body = None
+
+    try:
+        if db is None:
+            from app.db.connection_manager import AsyncSessionLocal
+            async with AsyncSessionLocal() as temp_db:
+                rendered_subject, rendered_body = await _fetch_and_render_saved_template(
+                    temp_db,
+                    template_key,
+                    context,
+                )
+        else:
+            rendered_subject, rendered_body = await _fetch_and_render_saved_template(
+                db,
+                template_key,
+                context,
+            )
+    except Exception:
+        rendered_subject, rendered_body = None, None
+
+    if rendered_subject and rendered_body:
+        return await send_email_async(rendered_subject, to_email, rendered_body)
+
+    if getattr(settings, "email_require_templates", False):
+        logger.warning("%s template not found; template-only mode enabled — refusing to send", template_key)
+        return False
+
+    if normalized_status == "shortlist":
+        subject, html_body = get_default_candidate_shortlisted_template_content()
+    elif normalized_status == "reject":
+        subject, html_body = get_default_candidate_rejected_template_content()
+    else:
+        subject, html_body = get_default_candidate_under_review_template_content()
+
+    html_body = _render_template(html_body, context)
+    subject = _render_template(subject, context)
+    return await send_email_async(subject, to_email, html_body)
     
 # --- NEW FUNCTION FOR RETRIEVING DEFAULT TEMPLATE CONTENT ---
 def get_default_interview_template_content() -> tuple[str, str]:
@@ -401,6 +486,64 @@ def get_default_interview_template_content() -> tuple[str, str]:
     </html>
     """
     return default_subject, default_html_body
+
+
+def get_default_candidate_shortlisted_template_content() -> tuple[str, str]:
+    subject = "Good news — You have been shortlisted for {{JOB_TITLE}}"
+    body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; color: #333;">
+        <div style="max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+            <h2 style="color: #0b2447;">Shortlisted for the Next Round</h2>
+            <p>Dear {{CANDIDATE_NAME}},</p>
+            <p>Thank you for your time. You have been shortlisted for the <strong>{{ROUND_NAME}}</strong> round for <strong>{{JOB_TITLE}}</strong>.</p>
+            <p>We will share the next steps and scheduling details shortly.</p>
+            <p><strong>Status:</strong> {{STATUS}}</p>
+            <p style="margin-top: 24px;">Regards,<br><strong>The RMS Team</strong></p>
+        </div>
+    </body>
+    </html>
+    """
+    return subject, body
+
+
+def get_default_candidate_rejected_template_content() -> tuple[str, str]:
+    subject = "Update on your {{JOB_TITLE}} application"
+    body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; color: #333;">
+        <div style="max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+            <h2 style="color: #b91c1c;">Application Update</h2>
+            <p>Dear {{CANDIDATE_NAME}},</p>
+            <p>Thank you for applying for <strong>{{JOB_TITLE}}</strong>. After reviewing the <strong>{{ROUND_NAME}}</strong> round, we will not be moving forward at this time.</p>
+            <p><strong>Status:</strong> {{STATUS}}</p>
+            <p style="color: #777;">{{REASON}}</p>
+            <p style="margin-top: 24px;">We appreciate your interest and wish you the very best.</p>
+            <p>Regards,<br><strong>The RMS Team</strong></p>
+        </div>
+    </body>
+    </html>
+    """
+    return subject, body
+
+
+def get_default_candidate_under_review_template_content() -> tuple[str, str]:
+    subject = "Your application is under review — {{JOB_TITLE}}"
+    body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; color: #333;">
+        <div style="max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+            <h2 style="color: #0b2447;">Application Under Review</h2>
+            <p>Dear {{CANDIDATE_NAME}},</p>
+            <p>Your application for <strong>{{JOB_TITLE}}</strong> is currently under review for the <strong>{{ROUND_NAME}}</strong> round.</p>
+            <p><strong>Status:</strong> {{STATUS}}</p>
+            <p>We will update you as soon as a decision is made.</p>
+            <p style="margin-top: 24px;">Regards,<br><strong>The RMS Team</strong></p>
+        </div>
+    </body>
+    </html>
+    """
+    return subject, body
 
 
 # Default template for admin invite

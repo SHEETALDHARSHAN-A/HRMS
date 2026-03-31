@@ -15,6 +15,7 @@ from app.utils.authentication_helpers import validate_input_email
 from app.utils.email_utils import send_interview_invite_email_async
 from app.services.config_service.email_template_service import EmailTemplateService
 import re
+from urllib.parse import quote
 from app.schemas.scheduling_interview_request import SchedulingInterviewRequest
 from app.schemas.scheduling_interview_request import RescheduleInterviewRequest
 from app.db.repository.scheduling_repository import (
@@ -22,10 +23,12 @@ from app.db.repository.scheduling_repository import (
     check_existing_schedules,
     resolve_round_instance_id_for_schedule,
     get_round_name_by_id,      # New import
+    get_round_duration_minutes,
     create_schedules_batch,
     get_job_title_by_id,
     get_next_round_details,
     get_schedule_context_by_token,
+    get_schedule_context_by_identifiers,
     reschedule_interview_by_token,
 )
 from app.db.redis_manager import RedisManager
@@ -148,6 +151,17 @@ class Scheduling:
             # Handle case where get_round_name_by_id is not implemented/imported correctly
             logger.warning("get_round_name_by_id repository function is unavailable.")
             round_name = "Interview round"
+
+        duration_minutes = 60
+        try:
+            duration_minutes = await get_round_duration_minutes(
+                self.db,
+                job_id=job_id,
+                round_id=request.round_id,
+                default_minutes=60,
+            )
+        except Exception as exc:
+            logger.warning("Unable to resolve interview duration; using default. Error: %s", exc)
        
         schedules_to_create = []
         emails_failed = []
@@ -172,7 +186,12 @@ class Scheduling:
             # Generate deterministic token (room ID)
             room_id = uuid.uuid4()
             base_url = str(self.INTERVIEW_LINK_BASE or "").rstrip("/")
-            interview_link = f"{base_url}/interview/join?token={room_id}"
+            interview_type_raw = str(getattr(request, "interview_type", "") or "").lower()
+            if any(tag in interview_type_raw for tag in ("coding", "apti", "aptitude", "assessment")):
+                email_param = f"&email={quote(email)}" if email else ""
+                interview_link = f"{base_url}/interview/coding?token={room_id}{email_param}"
+            else:
+                interview_link = f"{base_url}/interview/join?token={room_id}"
 
             # Resolve scheduling.round_id as interview_rounds.id for this candidate.
             schedule_round_id = await resolve_round_instance_id_for_schedule(
@@ -270,6 +289,7 @@ class Scheduling:
                 "interview_token": room_id,
                 "interviewer_id": request.interviewer_id or None,
                 "scheduled_datetime": interview_datetime_utc,
+                "interview_duration": duration_minutes,
                 "status": "scheduled",
                 "round_id": schedule_round_id,
                 "email_sent": email_sent_status,
@@ -301,11 +321,41 @@ class Scheduling:
 
     async def reschedule_candidate(self, request: RescheduleInterviewRequest):
         """Reschedule an already scheduled interview by interview token."""
-        schedule_context = await get_schedule_context_by_token(self.db, request.interview_token)
+        interview_token = str(getattr(request, "interview_token", "") or "").strip() or None
+        schedule_context = None
+
+        if interview_token:
+            schedule_context = await get_schedule_context_by_token(self.db, interview_token)
+        else:
+            job_id = str(getattr(request, "job_id", "") or "").strip()
+            profile_id = str(getattr(request, "profile_id", "") or "").strip()
+            round_id = str(getattr(request, "round_id", "") or "").strip()
+            if not (job_id and profile_id and round_id):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        "Provide either interview_token, or the full job_id/profile_id/round_id set for rescheduling."
+                    ),
+                )
+
+            schedule_context = await get_schedule_context_by_identifiers(
+                self.db,
+                job_id=job_id,
+                profile_id=profile_id,
+                round_id=round_id,
+            )
+            if schedule_context:
+                interview_token = str(schedule_context.get("interview_token") or "").strip() or None
+
         if not schedule_context:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Interview schedule not found for the provided token.",
+                detail="Interview schedule not found for the provided token or identifiers.",
+            )
+        if not interview_token:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Interview token could not be resolved for the selected schedule.",
             )
 
         try:
@@ -338,7 +388,7 @@ class Scheduling:
 
         updated_schedule = await reschedule_interview_by_token(
             self.db,
-            request.interview_token,
+            interview_token,
             interview_datetime_utc,
         )
         if not updated_schedule:
@@ -354,17 +404,25 @@ class Scheduling:
         interview_type = str(schedule_context.get("interview_type") or "agent_interview").strip().lower()
 
         base_url = str(self.INTERVIEW_LINK_BASE or "").rstrip("/")
-        interview_link = (
-            f"{base_url}/interview/join?token={request.interview_token}"
-            if base_url
-            else f"/interview/join?token={request.interview_token}"
-        )
+        if any(tag in interview_type for tag in ("coding", "apti", "aptitude", "assessment")):
+            email_param = f"&email={quote(candidate_email)}" if candidate_email else ""
+            interview_link = (
+                f"{base_url}/interview/coding?token={interview_token}{email_param}"
+                if base_url
+                else f"/interview/coding?token={interview_token}{email_param}"
+            )
+        else:
+            interview_link = (
+                f"{base_url}/interview/join?token={interview_token}"
+                if base_url
+                else f"/interview/join?token={interview_token}"
+            )
 
         # For coding/apti rounds keep assessment end-time in sync with the new start time.
         assessment_end_utc = None
         if interview_type in {"coding_assessment", "apti_assessment"}:
             duration_minutes = 60
-            policy_key = f"interview_runtime_policy:{request.interview_token}"
+            policy_key = f"interview_runtime_policy:{interview_token}"
             try:
                 redis_client = await RedisManager.get_client()
                 existing_policy_raw = await redis_client.get(policy_key)
@@ -409,12 +467,13 @@ class Scheduling:
                 if assessment_end_utc
                 else f"Please join at {localized_datetime.strftime('%d-%m-%Y %I:%M %p')}"
             )
+            link_label = "Open Assessment" if assessment_end_utc else "Join Interview"
             rendered_body = (
                 f"<p>Dear {candidate_name},</p>"
                 f"<p>Your {round_name} for {job_title} has been rescheduled.</p>"
                 f"<p>{timing_line}</p>"
                 f"{reason_html}"
-                f"<p>Join link: <a href=\"{interview_link}\">Join Interview</a></p>"
+                f"<p>Join link: <a href=\"{interview_link}\">{link_label}</a></p>"
             )
 
         email_sent = False
@@ -427,7 +486,7 @@ class Scheduling:
                     custom_body=rendered_body,
                     candidate_name=candidate_name,
                     interview_link=interview_link,
-                    interview_token=request.interview_token,
+                    interview_token=interview_token,
                     interview_datetime=interview_datetime_utc,
                     job_title=job_title,
                     round_name=round_name,
@@ -438,7 +497,7 @@ class Scheduling:
         return {
             "message": "Interview rescheduled successfully.",
             "data": {
-                "interview_token": str(request.interview_token),
+                "interview_token": str(interview_token),
                 "job_id": updated_schedule.get("job_id"),
                 "profile_id": updated_schedule.get("profile_id"),
                 "round_id": updated_schedule.get("round_id"),

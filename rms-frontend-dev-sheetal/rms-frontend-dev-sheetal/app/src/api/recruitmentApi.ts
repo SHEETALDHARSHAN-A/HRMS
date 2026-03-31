@@ -233,6 +233,21 @@ export type CandidateStatus = "shortlisted" | "under_review" | "rejected";
 export type InterviewLevel = 'Easy' | 'Medium' | 'Hard';
 export type InterviewType = 'Agent_interview' | 'In_person';
 
+export interface ScheduledInterview {
+    profile_id: string;
+    job_id: string;
+    round_id: string;
+    candidate_name: string;
+    candidate_email: string;
+    job_title: string;
+    round_name: string;
+    scheduled_datetime: string;
+    status: string;
+    interview_token: string;
+    interview_type: string;
+    level_of_interview: string | null;
+}
+
 export interface ScheduleInterviewData {
     job_id: string;
     profile_id: string[];
@@ -242,6 +257,18 @@ export interface ScheduleInterviewData {
     interviewer_id?: string;
     interview_type: InterviewType;
     level_of_interview: string;
+    email_subject?: string;
+    email_body?: string;
+}
+
+export interface RescheduleInterviewData {
+    interview_token?: string;
+    job_id?: string;
+    profile_id?: string;
+    round_id?: string;
+    interview_date: string;
+    interview_time: string;
+    reason?: string;
     email_subject?: string;
     email_body?: string;
 }
@@ -304,6 +331,46 @@ export const scheduleInterview = async (data: ScheduleInterviewData): Recruitmen
             return { success: true, data: response.data.data };
         }
         return { success: false, error: response.data.message || 'Failed to schedule interviews.' };
+    } catch (error) {
+        return { success: false, error: extractError(error) };
+    }
+};
+
+/**
+ * 5. Fetch scheduled interviews for a round.
+ * GET /v1/scheduling/scheduled-interviews
+ */
+export const getScheduledInterviews = async (
+    jobId: string,
+    roundId: string
+): RecruitmentApiResult<ScheduledInterview[]> => {
+    try {
+        const response = await axiosInstance.get<StandardResponse<{ interviews: ScheduledInterview[] }>>(
+            '/scheduling/scheduled-interviews',
+            { params: { job_id: jobId, round_id: roundId } }
+        );
+
+        if (response.data.success && response.data.data) {
+            return { success: true, data: response.data.data.interviews || [] };
+        }
+        return { success: false, error: response.data.message || 'Failed to load scheduled interviews.' };
+    } catch (error) {
+        return { success: false, error: extractError(error) };
+    }
+};
+
+/**
+ * 6. Reschedule a scheduled interview.
+ * POST /v1/scheduling/reschedule-interview
+ */
+export const rescheduleInterview = async (data: RescheduleInterviewData): RecruitmentApiResult<any> => {
+    try {
+        const response = await axiosInstance.post<StandardResponse<any>>('/scheduling/reschedule-interview', data);
+
+        if (response.data.success) {
+            return { success: true, data: response.data.data };
+        }
+        return { success: false, error: response.data.message || 'Failed to reschedule interview.' };
     } catch (error) {
         return { success: false, error: extractError(error) };
     }

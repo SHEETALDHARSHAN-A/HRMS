@@ -161,14 +161,40 @@ class MultiAccountManager {
     // This happens if session storage was cleared. Return a minimal session.
     if (sessionToken && !storedSession) {
       console.warn('⚠️ Token found but session data missing for tab. Rebuilding minimal session.', this.currentTabId);
-      return {
+
+      let recoveredRole = '';
+      let recoveredUserId = '';
+      let recoveredUser: any = {};
+
+      try {
+        const payload = JSON.parse(atob(sessionToken.split('.')[1] || ''));
+        recoveredRole = payload?.role || payload?.user_role || '';
+        recoveredUserId = payload?.user_id || payload?.sub || '';
+        recoveredUser = {
+          email: payload?.email || '',
+          first_name: payload?.fn || payload?.first_name || '',
+          last_name: payload?.ln || payload?.last_name || '',
+          role: recoveredRole,
+          user_id: recoveredUserId,
+        };
+      } catch (error) {
+        console.warn('⚠️ Failed to recover user details from token payload:', error);
+      }
+
+      const rebuiltSession: TabSession = {
         tabId: this.currentTabId,
         authToken: sessionToken,
-        user: {},
-        userRole: '', // This will trigger ProtectedRoute to fail
-        user_id: '',
-        timestamp: Date.now()
+        user: recoveredUser,
+        userRole: recoveredRole,
+        user_id: recoveredUserId,
+        timestamp: Date.now(),
       };
+
+      const refreshedSessions = sessions.filter(session => session.tabId !== this.currentTabId);
+      refreshedSessions.push(rebuiltSession);
+      this.saveSessions(refreshedSessions);
+
+      return rebuiltSession;
     }
 
     // No token and no valid session

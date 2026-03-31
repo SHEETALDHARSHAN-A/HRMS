@@ -50,7 +50,7 @@ class ProfessionalInterviewAgent(Agent):
         self.interview_context = interview_context
         
         # --- Context from PostgreSQL ---
-        self.interview_duration = interview_context.get('interview_duration', 20)
+        self.interview_duration = interview_context.get('interview_duration', 60)
         self.candidate_name = interview_context.get('candidate_name', 'candidate')
         
         # --- Store IDs for transcript logging ---

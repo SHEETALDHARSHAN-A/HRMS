@@ -18,6 +18,7 @@ from app.db.models.resume_model import InterviewRounds, Profile
 from app.db.models.scheduling_model import Scheduling
 from app.db.models.shortlist_model import Shortlist
 from app.db.models.transcript_model import Transcript
+from app.services.candidate_status_notification_service import CandidateStatusNotificationService
 
 try:
 	from groq import AsyncGroq
@@ -122,6 +123,21 @@ class InterviewCompletionService:
 						"error": str(auto_exc),
 					}
 
+			notification_result = {
+				"sent": False,
+				"reason": "not_attempted",
+			}
+			try:
+				notification_result = await CandidateStatusNotificationService(self.db).send_status_email(
+					profile_id=schedule.profile_id,
+					round_id=current_round.id,
+					result=decision,
+					reason=final_notes,
+					source="interview_completion",
+				)
+			except Exception as notify_exc:
+				logger.warning("Candidate status email failed during interview completion: %s", notify_exc)
+
 			await self._mark_schedule_completed(schedule)
 
 			await self._attach_evaluation_to_transcript(
@@ -149,6 +165,7 @@ class InterviewCompletionService:
 				},
 				"nextRound": next_round,
 				"autoSchedule": auto_schedule,
+				"notification": notification_result,
 				"transcriptId": str(transcript.id) if transcript else None,
 				"codingSubmissionId": str(coding_submission.id) if coding_submission else None,
 			}

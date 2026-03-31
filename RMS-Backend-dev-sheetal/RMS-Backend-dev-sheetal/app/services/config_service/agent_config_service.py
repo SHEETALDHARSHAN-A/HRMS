@@ -12,6 +12,29 @@ from fastapi import HTTPException, status
 
 logger = logging.getLogger(__name__)
 
+
+def _clean_str_list(raw: Any) -> List[str]:
+    if not isinstance(raw, list):
+        return []
+    cleaned: List[str] = []
+    for item in raw:
+        text = str(item or "").strip()
+        if text:
+            cleaned.append(text)
+    return cleaned
+
+
+def _coerce_count(raw: Any, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(raw)
+    except Exception:
+        value = default
+    if value < minimum:
+        return minimum
+    if value > maximum:
+        return maximum
+    return value
+
 class AgentConfigService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -81,6 +104,57 @@ class AgentConfigService:
                 "job_id": job_uuid,
                 "round_list_id": round_list_uuid
             }
+
+            assessment_settings = {
+                "coding_question_count": _coerce_count(
+                    getattr(round_data, "codingQuestionCount", getattr(round_data, "coding_question_count", 1)),
+                    default=1,
+                    minimum=1,
+                    maximum=20,
+                ),
+                "coding_question_type": str(
+                    getattr(round_data, "codingQuestionType", getattr(round_data, "coding_question_type", "")) or ""
+                ).strip().lower() or None,
+                "coding_categories": _clean_str_list(
+                    getattr(round_data, "codingCategories", getattr(round_data, "coding_categories", []))
+                ),
+                "coding_custom_questions": _clean_str_list(
+                    getattr(round_data, "codingCustomQuestions", getattr(round_data, "coding_custom_questions", []))
+                ),
+                "mcq_question_count": _coerce_count(
+                    getattr(round_data, "mcqQuestionCount", getattr(round_data, "mcq_question_count", 5)),
+                    default=5,
+                    minimum=1,
+                    maximum=100,
+                ),
+                "mcq_question_type": str(
+                    getattr(round_data, "mcqQuestionType", getattr(round_data, "mcq_question_type", "")) or ""
+                ).strip().lower() or None,
+                "mcq_categories": _clean_str_list(
+                    getattr(round_data, "mcqCategories", getattr(round_data, "mcq_categories", []))
+                ),
+                "mcq_custom_questions": (
+                    getattr(round_data, "mcqCustomQuestions", getattr(round_data, "mcq_custom_questions", [])) or []
+                ),
+            }
+
+            # Support apti aliases from frontend payloads.
+            apti_count = getattr(round_data, "aptiQuestionCount", getattr(round_data, "apti_question_count", None))
+            if apti_count is not None:
+                assessment_settings["mcq_question_count"] = _coerce_count(apti_count, default=5, minimum=1, maximum=100)
+
+            apti_type = getattr(round_data, "aptiQuestionType", getattr(round_data, "apti_question_type", None))
+            if apti_type is not None:
+                assessment_settings["mcq_question_type"] = str(apti_type or "").strip().lower() or None
+
+            apti_categories = getattr(round_data, "aptiCategories", getattr(round_data, "apti_categories", None))
+            if apti_categories:
+                assessment_settings["mcq_categories"] = _clean_str_list(apti_categories)
+
+            apti_custom = getattr(round_data, "aptiCustomQuestions", getattr(round_data, "apti_custom_questions", None))
+            if apti_custom:
+                assessment_settings["mcq_custom_questions"] = apti_custom or []
+
             # Always accept an explicit score distribution or individual metrics/thresholds
             # and store them under `score_distribution` on the config payload.
             if hasattr(round_data, 'scoreDistribution') and round_data.scoreDistribution is not None:
@@ -113,6 +187,10 @@ class AgentConfigService:
                     config_payload.setdefault('score_distribution', {})['rejecting'] = round_data.rejectingThreshold
                 if getattr(round_data, 'rejecting_threshold', None) is not None:
                     config_payload.setdefault('score_distribution', {})['rejecting'] = round_data.rejecting_threshold
+
+            if not isinstance(config_payload.get("score_distribution"), dict):
+                config_payload["score_distribution"] = {}
+            config_payload["score_distribution"]["assessment_settings"] = assessment_settings
             
             # Check if this is an update or a new config
             existing_config = existing_configs_map.get(str(round_list_uuid))
@@ -166,6 +244,27 @@ class AgentConfigService:
                 "mcqDifficulty": getattr(config, "mcq_difficulty", "medium"),
                 "mcqQuestions": getattr(config, "mcq_questions", None) or [],
                 "mcqPassingScore": getattr(config, "mcq_passing_score", 60),
+                "codingQuestionCount": (
+                    (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("coding_question_count"))
+                    or 1
+                ),
+                "codingQuestionType": (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("coding_question_type")),
+                "codingCategories": (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("coding_categories")) or [],
+                "codingCustomQuestions": (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("coding_custom_questions")) or [],
+                "mcqQuestionCount": (
+                    (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("mcq_question_count"))
+                    or 5
+                ),
+                "mcqQuestionType": (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("mcq_question_type")),
+                "mcqCategories": (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("mcq_categories")) or [],
+                "mcqCustomQuestions": (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("mcq_custom_questions")) or [],
+                "aptiQuestionCount": (
+                    (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("mcq_question_count"))
+                    or 5
+                ),
+                "aptiQuestionType": (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("mcq_question_type")),
+                "aptiCategories": (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("mcq_categories")) or [],
+                "aptiCustomQuestions": (((getattr(config, "score_distribution", None) or {}).get("assessment_settings", {}) or {}).get("mcq_custom_questions")) or [],
                 "scoreDistribution": config.score_distribution,
                 "shortlistingThreshold": (config.score_distribution or {}).get('shortlisting') if config.score_distribution is not None else None,
                 "rejectingThreshold": (config.score_distribution or {}).get('rejecting') if config.score_distribution is not None else None,

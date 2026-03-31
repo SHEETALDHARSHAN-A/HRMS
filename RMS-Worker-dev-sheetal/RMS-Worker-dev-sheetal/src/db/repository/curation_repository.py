@@ -1,6 +1,9 @@
 # src/db/repository/curation_repository.py
 
 import json
+import logging
+
+import httpx
 
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
@@ -20,6 +23,9 @@ from src.db.models.job_post_model import (
     JobLocations, LocationList, RoundList,
     EvaluationCriteria, JobDescription
 )
+from src.config.app_config import get_app_config
+
+logger = logging.getLogger(__name__)
 
 class CurationRepository:
     def __init__(self, session: AsyncSession):
@@ -184,8 +190,63 @@ class CurationRepository:
 
             # Commit all inserts/updates
             await self.session.commit()
+
+            try:
+                await self._notify_candidate_statuses(curated_data, first_round)
+            except Exception as notify_exc:
+                logger.warning("[CurationRepository] Candidate status notification failed: %s", notify_exc)
+
             return created_curations
 
         except SQLAlchemyError as e:
             await self.session.rollback()
             raise RuntimeError(f"Error saving curation results: {str(e)}")
+
+    async def _notify_candidate_statuses(
+        self,
+        curated_data: List[Dict[str, any]],
+        first_round: Optional[RoundList],
+    ) -> None:
+        if not curated_data or not first_round:
+            return
+
+        config = get_app_config()
+        base_url = (getattr(config, "BACKEND_BASE_URL", None) or getattr(config, "APP_BASE_URL", None) or "").rstrip("/")
+        token = getattr(config, "INTERNAL_SERVICE_TOKEN", None) or ""
+
+        if not base_url or not token:
+            logger.info("[CurationRepository] Skipping notifications: BACKEND_BASE_URL or INTERNAL_SERVICE_TOKEN missing")
+            return
+
+        notify_url = f"{base_url}/api/v1/candidate-status/notify"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for data in curated_data:
+                profile_id = data.get("profile_id")
+                if not profile_id:
+                    continue
+                payload = {
+                    "profile_id": str(profile_id),
+                    "round_id": str(first_round.id),
+                    "result": data.get("result", "under_review"),
+                    "reason": data.get("explanation") or data.get("reason") or "",
+                    "source": "curation_worker",
+                }
+                try:
+                    response = await client.post(
+                        notify_url,
+                        json=payload,
+                        headers={"X-Internal-Token": token},
+                    )
+                    if response.status_code >= 400:
+                        logger.warning(
+                            "[CurationRepository] Notification failed for profile %s: %s",
+                            profile_id,
+                            response.text,
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "[CurationRepository] Notification error for profile %s: %s",
+                        profile_id,
+                        exc,
+                    )

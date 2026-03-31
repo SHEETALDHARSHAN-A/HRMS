@@ -14,6 +14,7 @@ from app.db.repository.shortlist_repository import (
     update_interview_round_status
 )
 from app.services.scheduling_service.next_round_auto_scheduler import NextRoundAutoScheduler
+from app.services.candidate_status_notification_service import CandidateStatusNotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,21 @@ class ShortlistService:
                         "error": str(auto_exc),
                     }
 
+            notification_result = {
+                "sent": False,
+                "reason": "not_attempted",
+            }
+            try:
+                notification_result = await CandidateStatusNotificationService(self.db_session).send_status_email(
+                    profile_id=profile_id,
+                    round_id=round_id,
+                    result=new_result,
+                    reason=reason,
+                    source="shortlist_update",
+                )
+            except Exception as notify_exc:
+                logger.warning("[ShortlistService] Status email failed: %s", notify_exc)
+
             return {
                 "shortlist_id": str(updated_entry.id),
                 "profile_id": str(updated_entry.profile_id),
@@ -127,6 +143,7 @@ class ShortlistService:
                 "reason": updated_entry.reason,
                 "updated_at": updated_entry.updated_at.isoformat(),
                 "auto_schedule": auto_schedule_result,
+                "notification": notification_result,
             }
 
         except ValueError as ve:

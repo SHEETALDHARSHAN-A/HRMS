@@ -269,3 +269,82 @@ async def test_update_job_agent_config_updates_existing_config_and_legacy_scores
     assert out['scoreDistribution']['role_fit'] == 0.7
     assert out['shortlistingThreshold'] == 0.5
     assert out['rejectingThreshold'] == 0.1
+
+
+@pytest.mark.asyncio
+async def test_update_job_agent_config_persists_assessment_settings():
+    job_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
+    job_uuid = uuid.UUID(job_id)
+    user_uuid = uuid.UUID(user_id)
+    round_list_id = str(uuid.uuid4())
+
+    round_data = AgentRoundConfigUpdate(
+        jobId=job_id,
+        roundListId=round_list_id,
+        roundName='Round X',
+        roundFocus='focus',
+        persona='alex',
+        codingQuestionCount=4,
+        codingQuestionType='dsa',
+        codingCategories=['arrays', 'graphs'],
+        codingCustomQuestions=['Q1', 'Q2'],
+        mcqQuestionCount=12,
+        mcqQuestionType='aptitude',
+        mcqCategories=['quant', 'logical'],
+        mcqCustomQuestions=[
+            {
+                'question': '2+2=?',
+                'options': ['1', '2', '3', '4'],
+                'answer': '4',
+            }
+        ],
+    )
+
+    class FakeDB:
+        def __init__(self):
+            self.calls = 0
+
+        async def get(self, model, uuid_val):
+            return FakeJob(user_uuid)
+
+        async def execute(self, stmt):
+            if self.calls == 0:
+                self.calls += 1
+                return FakeResultForExecute(scalars_list=[])
+
+            cfg = FakeConfig(
+                id=uuid.uuid4(),
+                job_id=job_uuid,
+                round_list_id=uuid.UUID(round_list_id),
+                round_name='Round X',
+            )
+            cfg.score_distribution = {
+                'assessment_settings': {
+                    'coding_question_count': 4,
+                    'coding_question_type': 'dsa',
+                    'coding_categories': ['arrays', 'graphs'],
+                    'coding_custom_questions': ['Q1', 'Q2'],
+                    'mcq_question_count': 12,
+                    'mcq_question_type': 'aptitude',
+                    'mcq_categories': ['quant', 'logical'],
+                    'mcq_custom_questions': [{'question': '2+2=?'}],
+                }
+            }
+            return FakeResultForExecute(scalar_one_obj=cfg)
+
+        async def commit(self):
+            return None
+
+    svc = AgentConfigService(FakeDB())
+    res = await svc.update_job_agent_config(job_id, user_id, [round_data])
+    out = res[0]
+
+    assert out['codingQuestionCount'] == 4
+    assert out['codingQuestionType'] == 'dsa'
+    assert out['codingCategories'] == ['arrays', 'graphs']
+    assert out['codingCustomQuestions'] == ['Q1', 'Q2']
+    assert out['mcqQuestionCount'] == 12
+    assert out['mcqQuestionType'] == 'aptitude'
+    assert out['mcqCategories'] == ['quant', 'logical']
+    assert out['aptiQuestionCount'] == 12

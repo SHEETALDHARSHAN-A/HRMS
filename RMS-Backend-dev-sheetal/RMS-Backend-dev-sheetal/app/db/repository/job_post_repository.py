@@ -896,18 +896,19 @@ async def get_jobs_by_user_id(db: AsyncSession, user_id: str) -> List[JobDetails
         raise
 
 async def get_agent_jobs_by_user_id(db: AsyncSession, user_id: str) -> List[JobDetails]:
-    """Return all job posts created by a specific user that have is_agent_interview = True."""
+    """Return job posts created by a specific user that are agent-enabled.
+
+    If the model does not expose an `is_agent_interview` column, fall back to
+    returning all jobs for the user so agent configs can still be managed.
+    """
     try:
-        stmt = (
-            select(JobDetails)
-            .where(
-                JobDetails.user_id == user_id,
-                JobDetails.is_agent_interview == True
-            )
-            .options(
-                *JOB_DETAILS_LOAD_OPTIONS,
-                selectinload(JobDetails.agent_configs)
-            )
+        stmt = select(JobDetails).where(JobDetails.user_id == user_id)
+        if hasattr(JobDetails, "is_agent_interview"):
+            stmt = stmt.where(JobDetails.is_agent_interview == True)
+
+        stmt = stmt.options(
+            *JOB_DETAILS_LOAD_OPTIONS,
+            selectinload(JobDetails.agent_configs)
         )
         order_col = _posted_date_desc()
         if order_col is not None:

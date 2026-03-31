@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from urllib.parse import quote
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -125,6 +126,7 @@ class NextRoundAutoScheduler:
                 interview_token=interview_token,
                 interviewer_id=getattr(config, "interviewer_id", None),
                 scheduled_datetime=scheduled_datetime,
+                interview_duration=duration_minutes,
                 status="scheduled",
                 email_sent=False,
                 phone_number=getattr(profile, "phone_number", None) if profile else None,
@@ -141,6 +143,7 @@ class NextRoundAutoScheduler:
             existing_schedule.level_of_interview = self._level_of_interview(config)
             existing_schedule.interviewer_id = getattr(config, "interviewer_id", None)
             existing_schedule.expired_at = assessment_end
+            existing_schedule.interview_duration = duration_minutes
             existing_schedule.rescheduled_count = int(existing_schedule.rescheduled_count or 0) + 1
             if profile and not existing_schedule.phone_number:
                 existing_schedule.phone_number = getattr(profile, "phone_number", None)
@@ -165,10 +168,11 @@ class NextRoundAutoScheduler:
                 secure_required=(round_mode in {"coding_assessment", "apti_assessment"}),
             )
             base_url = str(getattr(settings, "frontend_url", "") or "").rstrip("/")
-            interview_link = (
-                f"{base_url}/interview/join?token={interview_token}"
-                if base_url
-                else f"/interview/join?token={interview_token}"
+            interview_link = self._build_interview_link(
+                base_url=base_url,
+                interview_token=str(interview_token),
+                candidate_email=profile_email,
+                round_mode=round_mode,
             )
             try:
                 email_sent = await send_interview_invite_email_async(
@@ -420,48 +424,96 @@ class NextRoundAutoScheduler:
         if mode == "coding_assessment":
             subject = f"Coding Round Scheduled - {round_name}"
             body = (
-                f"Hi {candidate_name},\n\n"
-                f"Your coding round ({round_name}) has been scheduled automatically.\n"
-                f"Start time: {start_text}\n"
-                f"End time: {end_text}\n"
-                "Security requirements:\n"
-                "- Secure browser mode must be enabled\n"
-                "- Camera and proctoring checks (head/eye movement) must stay active\n\n"
-                "Use your interview link to start the assessment in the allowed window."
+                f"""
+                <html>
+                <body style="font-family: Arial, sans-serif; color: #1f2937;">
+                    <div style="max-width: 640px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 10px;">
+                        <h2 style="margin: 0 0 12px; color: #0f172a;">Coding Round Scheduled</h2>
+                        <p>Hi <strong>{candidate_name}</strong>,</p>
+                        <p>Your coding round (<strong>{round_name}</strong>) has been scheduled automatically.</p>
+                        <p><strong>Start:</strong> {start_text}<br><strong>End:</strong> {end_text}</p>
+                        <p><strong>Security requirements:</strong></p>
+                        <ul>
+                            <li>Secure browser mode must be enabled</li>
+                            <li>Camera and proctoring checks (head/eye movement) must stay active</li>
+                        </ul>
+                        <p>Use the assessment link below within the allowed window:</p>
+                        <p><a href="{{JOIN_URL}}">Open Assessment</a></p>
+                        <p><strong>Room ID:</strong> {{ROOM_CODE}}</p>
+                        <p style="margin-top: 24px;">Regards,<br><strong>RMS Team</strong></p>
+                    </div>
+                </body>
+                </html>
+                """
             )
             return subject, body
 
         if mode == "apti_assessment":
             subject = f"Aptitude Round Scheduled - {round_name}"
             body = (
-                f"Hi {candidate_name},\n\n"
-                f"Your aptitude round ({round_name}) has been scheduled automatically.\n"
-                f"Start time: {start_text}\n"
-                f"End time: {end_text}\n"
-                "Security requirements:\n"
-                "- Secure browser mode must be enabled\n"
-                "- Camera and proctoring checks (head/eye movement) must stay active\n\n"
-                "Use your interview link to start the assessment in the allowed window."
+                f"""
+                <html>
+                <body style="font-family: Arial, sans-serif; color: #1f2937;">
+                    <div style="max-width: 640px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 10px;">
+                        <h2 style="margin: 0 0 12px; color: #0f172a;">Aptitude Round Scheduled</h2>
+                        <p>Hi <strong>{candidate_name}</strong>,</p>
+                        <p>Your aptitude round (<strong>{round_name}</strong>) has been scheduled automatically.</p>
+                        <p><strong>Start:</strong> {start_text}<br><strong>End:</strong> {end_text}</p>
+                        <p><strong>Security requirements:</strong></p>
+                        <ul>
+                            <li>Secure browser mode must be enabled</li>
+                            <li>Camera and proctoring checks (head/eye movement) must stay active</li>
+                        </ul>
+                        <p>Use the assessment link below within the allowed window:</p>
+                        <p><a href="{{JOIN_URL}}">Open Assessment</a></p>
+                        <p><strong>Room ID:</strong> {{ROOM_CODE}}</p>
+                        <p style="margin-top: 24px;">Regards,<br><strong>RMS Team</strong></p>
+                    </div>
+                </body>
+                </html>
+                """
             )
             return subject, body
 
         if mode == "in_person":
             subject = f"In-person Interview Scheduled - {round_name}"
             body = (
-                f"Hi {candidate_name},\n\n"
-                f"Your in-person interview round ({round_name}) has been scheduled automatically.\n"
-                f"Meeting time: {start_text}\n"
-                "Meeting room and interviewer details will be available on your schedule panel.\n"
-                "If needed, this slot can be rescheduled by your recruiter."
+                f"""
+                <html>
+                <body style="font-family: Arial, sans-serif; color: #1f2937;">
+                    <div style="max-width: 640px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 10px;">
+                        <h2 style="margin: 0 0 12px; color: #0f172a;">In-person Interview Scheduled</h2>
+                        <p>Hi <strong>{candidate_name}</strong>,</p>
+                        <p>Your in-person interview round (<strong>{round_name}</strong>) has been scheduled automatically.</p>
+                        <p><strong>Meeting time:</strong> {start_text}</p>
+                        <p>Meeting room and interviewer details will be available on your schedule panel.</p>
+                        <p>If needed, this slot can be rescheduled by your recruiter.</p>
+                        <p style="margin-top: 24px;">Regards,<br><strong>RMS Team</strong></p>
+                    </div>
+                </body>
+                </html>
+                """
             )
             return subject, body
 
         subject = f"Agent Live Interview Scheduled - {round_name}"
         body = (
-            f"Hi {candidate_name},\n\n"
-            f"You have moved to the next agent live interview round ({round_name}).\n"
-            f"Meeting time: {start_text}\n"
-            "The live interview room will be activated shortly before the start time."
+            f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; color: #1f2937;">
+                <div style="max-width: 640px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 10px;">
+                    <h2 style="margin: 0 0 12px; color: #0f172a;">Agent Live Interview Scheduled</h2>
+                    <p>Hi <strong>{candidate_name}</strong>,</p>
+                    <p>You have moved to the next agent live interview round (<strong>{round_name}</strong>).</p>
+                    <p><strong>Meeting time:</strong> {start_text}</p>
+                    <p>The live interview room will be activated shortly before the start time.</p>
+                    <p><a href="{{JOIN_URL}}">Join Interview</a></p>
+                    <p><strong>Room ID:</strong> {{ROOM_CODE}}</p>
+                    <p style="margin-top: 24px;">Regards,<br><strong>RMS Team</strong></p>
+                </div>
+            </body>
+            </html>
+            """
         )
         return subject, body
 
@@ -491,3 +543,19 @@ class NextRoundAutoScheduler:
             json.dumps(policy, ensure_ascii=True),
             ex=60 * 60 * 24 * 7,
         )
+
+    @staticmethod
+    def _build_interview_link(
+        *,
+        base_url: str,
+        interview_token: str,
+        candidate_email: str | None,
+        round_mode: str,
+    ) -> str:
+        base = (base_url or "").rstrip("/")
+        if round_mode in {"coding_assessment", "apti_assessment"}:
+            email_param = f"&email={quote(candidate_email)}" if candidate_email else ""
+            path = f"/interview/coding?token={interview_token}{email_param}"
+        else:
+            path = f"/interview/join?token={interview_token}"
+        return f"{base}{path}" if base else path

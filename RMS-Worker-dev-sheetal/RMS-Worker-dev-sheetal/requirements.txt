@@ -3,6 +3,7 @@ pydantic
 pydantic-settings
 redis
 jsons
+httpx
 
 pymongo
 motor

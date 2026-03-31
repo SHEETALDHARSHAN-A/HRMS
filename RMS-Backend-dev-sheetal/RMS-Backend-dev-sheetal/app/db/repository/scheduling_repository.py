@@ -18,6 +18,7 @@ from app.db.models.resume_model import Profile, InterviewRounds
 from app.db.models.job_post_model import JobDetails, RoundList
 from app.db.models.job_post_model import JobDetails
 from app.db.models.scheduling_model import Scheduling
+from app.db.models.agent_config_model import AgentRoundConfig
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 import re
@@ -286,6 +287,62 @@ async def get_round_name_by_id(db: AsyncSession, round_id: str) -> Optional[Dict
     return None
 
 
+async def get_round_duration_minutes(
+    db: AsyncSession,
+    *,
+    job_id: str,
+    round_id: str,
+    default_minutes: int = 60,
+) -> int:
+    """Resolve interview duration (minutes) from round config with sane defaults."""
+    try:
+        job_uuid = UUID(str(job_id))
+        round_uuid = UUID(str(round_id))
+    except Exception:
+        return default_minutes
+
+    round_list_id = None
+
+    round_list_stmt = select(RoundList.id).where(
+        RoundList.job_id == job_uuid,
+        RoundList.id == round_uuid,
+    )
+    round_list_id = (await db.execute(round_list_stmt)).scalar_one_or_none()
+
+    if round_list_id is None:
+        round_instance_stmt = select(InterviewRounds.round_id).where(
+            InterviewRounds.job_id == job_uuid,
+            InterviewRounds.id == round_uuid,
+        )
+        round_list_id = (await db.execute(round_instance_stmt)).scalar_one_or_none()
+
+    if round_list_id is None:
+        return default_minutes
+
+    config_stmt = (
+        select(AgentRoundConfig)
+        .where(AgentRoundConfig.job_id == job_uuid)
+        .where(AgentRoundConfig.round_list_id == round_list_id)
+        .limit(1)
+    )
+    config = (await db.execute(config_stmt)).scalars().first()
+    if config is None:
+        return default_minutes
+
+    for attr in ("interview_time_max", "interview_time_min"):
+        raw = getattr(config, attr, None)
+        if raw is None:
+            continue
+        try:
+            value = int(raw)
+        except Exception:
+            continue
+        if value > 0:
+            return min(240, max(30, value))
+
+    return default_minutes
+
+
 async def get_next_round_details(db: AsyncSession, job_id: str, current_round_id: str) -> Optional[Dict[str, Any]]:
     """
     Fetches the round name for the next round in the sequence for a given job.
@@ -344,6 +401,7 @@ async def get_schedule_context_by_token(
             Scheduling.level_of_interview.label("level_of_interview"),
             Scheduling.rescheduled_count.label("rescheduled_count"),
             Scheduling.scheduled_datetime.label("scheduled_datetime"),
+            Scheduling.interview_duration.label("interview_duration"),
             Profile.name.label("candidate_name"),
             Profile.email.label("candidate_email"),
             JobDetails.job_title.label("job_title"),
@@ -378,6 +436,87 @@ async def get_schedule_context_by_token(
         "level_of_interview": row.level_of_interview,
         "rescheduled_count": row.rescheduled_count,
         "scheduled_datetime": row.scheduled_datetime,
+        "interview_duration": row.interview_duration,
+        "candidate_name": row.candidate_name,
+        "candidate_email": row.candidate_email,
+        "job_title": row.job_title,
+        "round_name": row.round_name,
+    }
+
+
+async def get_schedule_context_by_identifiers(
+    db: AsyncSession,
+    *,
+    job_id: str,
+    profile_id: str,
+    round_id: str,
+) -> Optional[Dict[str, Any]]:
+    """Fetch schedule + candidate metadata by job/profile/round identity.
+
+    Supports round_id as either scheduling_interviews.round_id (interview_rounds.id)
+    or interview_rounds.round_id (round_list.id).
+    """
+    try:
+        job_uuid = UUID(str(job_id))
+        profile_uuid = UUID(str(profile_id))
+        round_uuid = UUID(str(round_id))
+    except ValueError:
+        return None
+
+    stmt = (
+        select(
+            Scheduling.profile_id.label("profile_id"),
+            Scheduling.job_id.label("job_id"),
+            Scheduling.round_id.label("round_id"),
+            Scheduling.interview_token.label("interview_token"),
+            Scheduling.interview_type.label("interview_type"),
+            Scheduling.level_of_interview.label("level_of_interview"),
+            Scheduling.rescheduled_count.label("rescheduled_count"),
+            Scheduling.scheduled_datetime.label("scheduled_datetime"),
+            Scheduling.interview_duration.label("interview_duration"),
+            Profile.name.label("candidate_name"),
+            Profile.email.label("candidate_email"),
+            JobDetails.job_title.label("job_title"),
+            RoundList.round_name.label("round_name"),
+        )
+        .select_from(Scheduling)
+        .join(Profile, Scheduling.profile_id == Profile.id)
+        .join(JobDetails, Scheduling.job_id == JobDetails.id)
+        .join(InterviewRounds, Scheduling.round_id == InterviewRounds.id, isouter=True)
+        .join(
+            RoundList,
+            or_(
+                RoundList.id == Scheduling.round_id,
+                RoundList.id == InterviewRounds.round_id,
+            ),
+            isouter=True,
+        )
+        .where(Scheduling.job_id == job_uuid)
+        .where(Scheduling.profile_id == profile_uuid)
+        .where(
+            or_(
+                Scheduling.round_id == round_uuid,
+                InterviewRounds.round_id == round_uuid,
+            )
+        )
+        .order_by(Scheduling.scheduled_datetime.desc())
+        .limit(1)
+    )
+
+    row = (await db.execute(stmt)).fetchone()
+    if row is None:
+        return None
+
+    return {
+        "profile_id": str(row.profile_id),
+        "job_id": str(row.job_id),
+        "round_id": str(row.round_id),
+        "interview_token": str(row.interview_token),
+        "interview_type": row.interview_type,
+        "level_of_interview": row.level_of_interview,
+        "rescheduled_count": row.rescheduled_count,
+        "scheduled_datetime": row.scheduled_datetime,
+        "interview_duration": row.interview_duration,
         "candidate_name": row.candidate_name,
         "candidate_email": row.candidate_email,
         "job_title": row.job_title,
@@ -435,6 +574,7 @@ async def get_scheduled_interviews(job_id: str, round_id: str, db: AsyncSession)
         Scheduling.job_id.label("job_id"),
         Scheduling.round_id.label("round_id"),
         Scheduling.scheduled_datetime,
+        Scheduling.interview_duration,
         Scheduling.status,
         Scheduling.interview_token,
         Scheduling.interview_type,
@@ -485,6 +625,7 @@ async def get_scheduled_interviews(job_id: str, round_id: str, db: AsyncSession)
             "job_title": row.job_title,
             "round_name": row.round_name,
             "scheduled_datetime": row.scheduled_datetime.isoformat(),
+            "interview_duration": row.interview_duration,
             "status": row.status,
             "interview_token": str(row.interview_token),
             "interview_type": row.interview_type,

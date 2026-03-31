@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Set, Dict, Any, Optional 
+from typing import List, Dict, Any, Optional 
 
 from src.db.models.job_post_model import JobDetails, RoundList
 from src.db.models.resume_model import Profile, InterviewRounds
@@ -19,19 +19,25 @@ class ResumeRepository:
 
     # ------------------------------------------------------------------
     # FIX APPLIED HERE: Changed return type from Set[str] to Dict[str, str]
-    async def get_existing_hashes_for_job(self, job_id: UUID) -> Dict[str, str]:
-        """Fetch all file hashes for the given job to prevent duplicates."""
-        stmt = select(Profile.file_hash, Profile.id).filter(Profile.job_id == job_id)
+    async def get_existing_hashes_for_job(self, job_id: UUID) -> Dict[str, List[Dict[str, str]]]:
+        """Fetch all file hashes for the given job to prevent duplicates.
+
+        Returns a mapping of hash -> list of {profile_id, email} entries.
+        """
+        stmt = select(Profile.file_hash, Profile.id, Profile.email).filter(Profile.job_id == job_id)
         result = await self.session.execute(stmt)
-        
-        # Changed logic: Map hash (key) to profile ID (value) or hash (value) if only existence check is needed.
-        # Mapping to hash (as a placeholder for existence) is sufficient to fix the TypeError.
-        # Let's map hash to the hash itself, or optionally to the profile ID. Using the hash for simplicity.
-        return {
-            hash_val: str(profile_id) # Map hash to profile ID for better error reporting upstream
-            for hash_val, profile_id in result.all()
-            if hash_val is not None
-        }
+
+        hash_map: Dict[str, List[Dict[str, str]]] = {}
+        for hash_val, profile_id, email in result.all():
+            if not hash_val:
+                continue
+            entry = {
+                "profile_id": str(profile_id),
+                "email": (email or "").strip().lower(),
+            }
+            hash_map.setdefault(hash_val, []).append(entry)
+
+        return hash_map
 
     # ------------------------------------------------------------------
     async def check_job_details_exists(self, job_id: UUID) -> bool:

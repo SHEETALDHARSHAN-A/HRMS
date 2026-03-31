@@ -5,6 +5,7 @@ import * as jobApi from "../../api/jobApi";
 import FileUpload from "../../components/common/FileUpload";
 import SkillList from "../../components/common/SkillList";
 import InterviewLevelsConfig from "../../components/common/InterviewLevelsConfig"; 
+import AgentRoundConfigEditor from "../../components/common/AgentRoundConfigEditor";
 import Button from "../../components/common/Button";
 import { ZodError } from "zod";
 import { Upload, Loader2, Combine, Home, Building, Globe, FileText, Plus, X, TrendingUp, MapPin, Clock } from "lucide-react";
@@ -1443,6 +1444,15 @@ const JobPostsForm = ({ onCancel, jobId }: JobPostsFormProps) => {
                     jobLocationScore={jobLocationScore}
                     setJobLocationScore={setJobLocationScore}
                     scoreTotalError={errors.score_total}
+                    agentConfigs={agentConfigs}
+                    setAgentConfigs={setAgentConfigs}
+                  />
+                </div>
+
+                {/* Full Agent Round Configuration */}
+                <div>
+                  <AgentRoundConfigEditor
+                    rounds={interviewLevels}
                     agentConfigs={agentConfigs}
                     setAgentConfigs={setAgentConfigs}
                   />

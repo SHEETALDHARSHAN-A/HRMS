@@ -7,6 +7,9 @@ from app.schemas.config_request import EmailTemplatePreviewRequest, EmailTemplat
 from app.services.config_service.email_template_service import EmailTemplateService
 from app.utils.email_utils import (
     get_default_interview_template_content,
+    get_default_candidate_shortlisted_template_content,
+    get_default_candidate_rejected_template_content,
+    get_default_candidate_under_review_template_content,
     get_default_admin_invite_template_content,
     get_default_admin_role_update_template_content,
     get_default_admin_delete_template_content,
@@ -53,6 +56,9 @@ async def get_email_template(
             # Normalize key and map to getter
             key_map = {
                 'CANDIDATE_INTERVIEW_SCHEDULED': get_default_interview_template_content,
+                'CANDIDATE_STATUS_SHORTLISTED': get_default_candidate_shortlisted_template_content,
+                'CANDIDATE_STATUS_REJECTED': get_default_candidate_rejected_template_content,
+                'CANDIDATE_STATUS_UNDER_REVIEW': get_default_candidate_under_review_template_content,
                 'ADMIN_INVITE': get_default_admin_invite_template_content,
                 'ADMIN_INVITATION': get_default_admin_invite_template_content,
                 'ADMIN_ROLE_UPDATE': get_default_admin_role_update_template_content,

@@ -204,6 +204,165 @@ class UploadJobPost(BaseUploadJobPost):
                     pass
 
         return None
+
+    def _coerce_int(self, value: Any, default: int = 0) -> int:
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return int(value)
+        digits = re.sub(r"[^0-9]", "", str(value))
+        if not digits:
+            return default
+        try:
+            return int(digits)
+        except ValueError:
+            return default
+
+    def _coerce_bool(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        text = str(value).strip().lower()
+        if text in {"true", "yes", "y", "1"}:
+            return True
+        if text in {"false", "no", "n", "0"}:
+            return False
+        return False
+
+    def _normalize_skills(self, skills: Any) -> list:
+        if not skills:
+            return []
+        if isinstance(skills, dict):
+            skills = [skills]
+        if not isinstance(skills, list):
+            return []
+
+        normalized = []
+        for item in skills:
+            if isinstance(item, str):
+                skill_name = item.strip()
+                if skill_name:
+                    normalized.append({"skill": skill_name, "weightage": 5})
+                continue
+            if isinstance(item, dict):
+                skill_name = (
+                    item.get("skill")
+                    or item.get("skill_name")
+                    or item.get("name")
+                    or item.get("title")
+                )
+                if not skill_name:
+                    continue
+                weight = item.get("weightage", item.get("weight", 5))
+                normalized.append({
+                    "skill": str(skill_name).strip(),
+                    "weightage": max(1, min(10, self._coerce_int(weight, 5))),
+                })
+        return normalized
+
+    def _normalize_job_details(self, job_details: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(job_details, dict):
+            return job_details
+
+        normalized = dict(job_details)
+
+        def pick(*keys: str) -> Any:
+            for key in keys:
+                if key in normalized and normalized[key] not in (None, ""):
+                    return normalized[key]
+            return None
+
+        title = pick("job_title", "jobTitle", "title", "position_title")
+        if title is not None:
+            normalized["job_title"] = str(title).strip()
+
+        description = pick("job_description", "jobDescription", "description")
+        if description is not None:
+            normalized["job_description"] = str(description).strip()
+
+        location = pick("job_location", "jobLocation", "location", "jobLocationName")
+        if location is not None:
+            normalized["job_location"] = str(location).strip()
+
+        work_from_home = pick("work_from_home", "workFromHome", "remote", "is_remote", "work_from_home_or_hybrid")
+        if work_from_home is not None:
+            normalized["work_from_home"] = self._coerce_bool(work_from_home)
+
+        min_exp = pick("minimum_experience", "min_experience", "minExperience", "experience_min")
+        max_exp = pick("maximum_experience", "max_experience", "maxExperience", "experience_max")
+        if min_exp is not None:
+            normalized["min_experience"] = self._coerce_int(min_exp, 0)
+            normalized["minimum_experience"] = normalized["min_experience"]
+        if max_exp is not None:
+            normalized["max_experience"] = self._coerce_int(max_exp, 0)
+            normalized["maximum_experience"] = normalized["max_experience"]
+
+        skills = pick("skills_required", "skillsRequired", "skills", "skillset")
+        if skills is not None:
+            normalized["skills_required"] = self._normalize_skills(skills)
+
+        return normalized
+
+    def _has_meaningful_skills(self, skills: Any) -> bool:
+        if not isinstance(skills, list):
+            return False
+        for item in skills:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("skill") or "").strip():
+                return True
+        return False
+
+    def _is_empty_job_details(self, job_details: Dict[str, Any]) -> bool:
+        if not isinstance(job_details, dict):
+            return True
+        title = str(job_details.get("job_title") or "").strip()
+        description = str(job_details.get("job_description") or "").strip()
+        location = str(job_details.get("job_location") or "").strip()
+        min_exp = self._coerce_int(job_details.get("min_experience"), 0)
+        max_exp = self._coerce_int(job_details.get("max_experience"), 0)
+        skills_ok = self._has_meaningful_skills(job_details.get("skills_required"))
+        return not (title or description or location or skills_ok or min_exp > 0 or max_exp > 0)
+
+    def _guess_job_title(self, text: str) -> str:
+        if not text:
+            return ""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        for line in lines[:30]:
+            if re.search(r"\b(job\s*title|position|role)\b", line, re.IGNORECASE):
+                if ":" in line:
+                    return line.split(":", 1)[-1].strip()
+                return line
+        return lines[0] if lines else ""
+
+    def _guess_experience_range(self, text: str) -> tuple[int, int]:
+        if not text:
+            return 0, 0
+        range_match = re.search(r"(\d+)\s*(?:-|to)\s*(\d+)\s*(?:\+?\s*)?(?:years|yrs)", text, re.IGNORECASE)
+        if range_match:
+            return self._coerce_int(range_match.group(1), 0), self._coerce_int(range_match.group(2), 0)
+        single_match = re.search(r"(\d+)\s*(?:\+?\s*)?(?:years|yrs)", text, re.IGNORECASE)
+        if single_match:
+            years = self._coerce_int(single_match.group(1), 0)
+            return years, years
+        return 0, 0
+
+    def _fallback_from_text(self, text_content: str) -> Dict[str, Any]:
+        title = self._guess_job_title(text_content)
+        min_exp, max_exp = self._guess_experience_range(text_content)
+        work_from_home = bool(re.search(r"\b(remote|work from home|wfh|hybrid)\b", text_content, re.IGNORECASE))
+        return {
+            "job_title": title,
+            "job_description": text_content.strip()[:8000],
+            "skills_required": [],
+            "job_location": "Work from home" if work_from_home else "",
+            "work_from_home": work_from_home,
+            "min_experience": min_exp,
+            "max_experience": max_exp,
+            "minimum_experience": min_exp,
+            "maximum_experience": max_exp,
+        }
  
     async def extract_job_details_with_text(self, text_content: str) -> Dict:
         """Processes text content with the LLM agent."""
@@ -408,7 +567,11 @@ class UploadJobPost(BaseUploadJobPost):
                          cached_content = cached_content.decode('utf-8')
                          
                     print(f"[INFO] Returning cached job details.")
-                    return {"job_details": json.loads(cached_content)}
+                    cached_details = json.loads(cached_content)
+                    normalized = self._normalize_job_details(cached_details)
+                    if not self._is_empty_job_details(normalized):
+                        return {"job_details": normalized}
+                    print(f"[WARN] Cached extraction was empty. Reprocessing file.")
                 else:
                     print(f"[WARN] Cached data for hash '{file_hash}' is missing 'extracted_content'. Re-processing.")
         
@@ -429,6 +592,7 @@ class UploadJobPost(BaseUploadJobPost):
                 file_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
         job_details = None
+        extracted_text = None
  
         if file_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
 
@@ -441,6 +605,7 @@ class UploadJobPost(BaseUploadJobPost):
 
                 return {"error": "We couldn’t extract details from the uploaded file. Please make sure it’s a clear and readable job description (PDF or DOCX) and try again."}
 
+            extracted_text = text_content
             job_details = await self.extract_job_details_with_text(text_content)
 
         elif file_type == 'application/pdf':
@@ -452,6 +617,7 @@ class UploadJobPost(BaseUploadJobPost):
             text_content = self.extract_text_from_pdf(file_content)
             if text_content:
                 print("[INFO] Extracted selectable text from PDF. Using text-based JD extraction path.")
+                extracted_text = text_content
                 job_details = await self.extract_job_details_with_text(text_content)
             else:
                 print("[INFO] No selectable text found in PDF. Falling back to image-based extraction path.")
@@ -472,6 +638,12 @@ class UploadJobPost(BaseUploadJobPost):
         if not job_details:
             print("[ERROR] Final job details extraction failed. Check the file content.")
             return {"error": "We couldn’t process the job description right now. Please try again later."}
+
+        if isinstance(job_details, dict):
+            job_details = self._normalize_job_details(job_details)
+            if self._is_empty_job_details(job_details) and extracted_text:
+                print("[WARN] LLM extraction returned empty fields. Falling back to text-based extraction.")
+                job_details = self._fallback_from_text(extracted_text)
  
         if isinstance(job_details, dict) and job_details.get("job_description"):
             job_details['job_description'] = job_details['job_description'].replace('\n', ' ')

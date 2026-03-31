@@ -162,6 +162,7 @@ def serialize_job_details(job: JobDetails) -> Dict[str, Any]:
         # Per-round agent configuration (if present)
         "agentRounds": [
             {
+                "assessment_settings": ((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}),
                 "id": str(ac.id),
                 "round_list_id": str(ac.round_list_id) if getattr(ac, 'round_list_id', None) else None,
                 "round_name": getattr(ac, 'round_name', None),
@@ -187,6 +188,18 @@ def serialize_job_details(job: JobDetails) -> Dict[str, Any]:
                 "mcq_difficulty": getattr(ac, 'mcq_difficulty', 'medium'),
                 "mcq_questions": getattr(ac, 'mcq_questions', None) or [],
                 "mcq_passing_score": getattr(ac, 'mcq_passing_score', 60),
+                "coding_question_count": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('coding_question_count')) or 1,
+                "coding_question_type": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('coding_question_type')),
+                "coding_categories": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('coding_categories')) or [],
+                "coding_custom_questions": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('coding_custom_questions')) or [],
+                "mcq_question_count": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('mcq_question_count')) or 5,
+                "mcq_question_type": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('mcq_question_type')),
+                "mcq_categories": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('mcq_categories')) or [],
+                "mcq_custom_questions": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('mcq_custom_questions')) or [],
+                "apti_question_count": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('mcq_question_count')) or 5,
+                "apti_question_type": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('mcq_question_type')),
+                "apti_categories": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('mcq_categories')) or [],
+                "apti_custom_questions": (((getattr(ac, 'score_distribution', None) or {}).get('assessment_settings', {}) or {}).get('mcq_custom_questions')) or [],
             }
             for ac in (getattr(job, 'agent_configs', []) or [])
         ],

@@ -164,3 +164,81 @@ async def test_reschedule_candidate_success(monkeypatch):
     assert res['status_code'] == status.HTTP_200_OK
     assert res['data']['status'] == 'rescheduled'
     assert res['data']['rescheduled_count'] == 2
+
+
+@pytest.mark.asyncio
+async def test_reschedule_candidate_identifier_mode_success(monkeypatch):
+    db = SimpleNamespace()
+    s = Scheduling(db=db)
+
+    existing_dt = datetime.now(timezone.utc) + timedelta(days=1)
+    monkeypatch.setattr(service_mod, 'get_schedule_context_by_token', AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        service_mod,
+        'get_schedule_context_by_identifiers',
+        AsyncMock(
+            return_value={
+                'profile_id': 'p1',
+                'job_id': 'j1',
+                'round_id': 'r1',
+                'interview_token': '00000000-0000-0000-0000-000000000030',
+                'scheduled_datetime': existing_dt,
+                'candidate_name': 'Test Candidate',
+                'candidate_email': 'candidate@example.com',
+                'job_title': 'Engineer',
+                'round_name': 'Round 1',
+                'interview_type': 'agent_interview',
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        service_mod,
+        'reschedule_interview_by_token',
+        AsyncMock(
+            return_value={
+                'profile_id': 'p1',
+                'job_id': 'j1',
+                'round_id': 'r1',
+                'status': 'rescheduled',
+                'rescheduled_count': 3,
+                'scheduled_datetime': existing_dt + timedelta(days=1),
+            }
+        ),
+    )
+    monkeypatch.setattr(service_mod, 'send_interview_invite_email_async', AsyncMock(return_value=True))
+
+    future_dt = datetime.now(timezone.utc) + timedelta(days=2)
+    req = RescheduleInterviewRequest(
+        interview_token=None,
+        job_id='11111111-1111-1111-1111-111111111111',
+        profile_id='22222222-2222-2222-2222-222222222222',
+        round_id='33333333-3333-3333-3333-333333333333',
+        interview_date=future_dt.date(),
+        interview_time=time(11, 0),
+    )
+
+    res = await s.reschedule_candidate(req)
+    assert res['status_code'] == status.HTTP_200_OK
+    assert res['data']['status'] == 'rescheduled'
+    assert res['data']['rescheduled_count'] == 3
+    assert res['data']['interview_token'] == '00000000-0000-0000-0000-000000000030'
+
+
+@pytest.mark.asyncio
+async def test_reschedule_candidate_requires_token_or_identifiers(monkeypatch):
+    db = SimpleNamespace()
+    s = Scheduling(db=db)
+
+    future_dt = datetime.now(timezone.utc) + timedelta(days=2)
+    req = RescheduleInterviewRequest(
+        interview_token=None,
+        job_id=None,
+        profile_id=None,
+        round_id=None,
+        interview_date=future_dt.date(),
+        interview_time=time(11, 0),
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await s.reschedule_candidate(req)
+    assert excinfo.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

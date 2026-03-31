@@ -33,8 +33,8 @@ class Scheduling(Base):
     # to avoid type-mismatch errors when comparing incoming token strings.
     interview_token = Column(String, unique=True, nullable=False, index=True)
     scheduled_datetime = Column(DateTime(timezone=True), nullable=False)
+    interview_duration = Column(Integer, nullable=False, default=60)
     status = Column(String, nullable=False, default="scheduled")
-    interview_duration = Column(Integer, nullable=False, default=20)
     
     # Relationships
     profile = relationship("Profile")
@@ -181,7 +181,7 @@ def fetch_interview_context(room_name: str) -> Optional[Tuple[Dict, Dict, Dict, 
             }
             
             profile_data = profile.extracted_content
-            duration = getattr(schedule, 'interview_duration', 20) or 20
+            duration = getattr(schedule, 'interview_duration', 60) or 60
             candidate_name = profile.name or "Candidate"
 
             # --- 3. Resolve round details and fetch specific agent configuration ---

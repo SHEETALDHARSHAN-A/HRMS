@@ -109,6 +109,8 @@ services:
       POPPLER_PATH: ${POPPLER_PATH:-/usr/bin}
       poppler_path: ${POPPLER_PATH:-/usr/bin}
       JOB_QUEUE: resume_queue
+      BACKEND_BASE_URL: ${BACKEND_BASE_URL:-http://backend:8000}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev-internal-token}
     volumes:
       - worker_uploads:/data/uploads
     depends_on:

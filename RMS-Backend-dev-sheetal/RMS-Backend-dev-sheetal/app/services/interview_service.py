@@ -79,7 +79,8 @@ class InterviewAuthService:
                 detail="This interview has already been completed.",
             )
 
-        if schedule_status != "scheduled":
+        allowed_statuses = {"scheduled", "rescheduled"}
+        if schedule_status not in allowed_statuses:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Interview status is '{schedule.status}'. Cannot proceed.",
