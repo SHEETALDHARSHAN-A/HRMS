@@ -149,7 +149,10 @@ class CodingService:
         if requested_language not in allowed_languages:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unsupported language '{requested_language}'. Allowed: {', '.join(allowed_languages)}",
+                detail=(
+                    f"Unsupported language '{requested_language}'. Allowed: {', '.join(allowed_languages)}. "
+                    "Update round codingLanguages configuration to enable additional languages."
+                ),
             )
 
         selected_question_payload = self._select_coding_question_payload(
@@ -228,7 +231,10 @@ class CodingService:
             if requested_language not in allowed_languages:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Unsupported language '{requested_language}'. Allowed: {', '.join(allowed_languages)}",
+                    detail=(
+                        f"Unsupported language '{requested_language}'. Allowed: {', '.join(allowed_languages)}. "
+                        "Update round codingLanguages configuration to enable additional languages."
+                    ),
                 )
 
             submission_language = requested_language
