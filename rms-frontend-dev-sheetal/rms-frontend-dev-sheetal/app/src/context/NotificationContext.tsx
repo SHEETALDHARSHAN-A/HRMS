@@ -36,6 +36,7 @@ interface NotificationProviderProps {
 }
 
 export const NotificationProvider: React.FC<NotificationProviderProps> = ({ children }) => {
+  const isDebug = !!import.meta.env.DEV;
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -46,13 +47,17 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     const currentSession = accountManager.getCurrentSession();
     
     if (!currentSession || !currentSession.authToken) {
-      console.log('⏭️ Skipping notification refresh: No authenticated session in current tab');
+      if (isDebug) {
+        console.log('⏭️ Skipping notification refresh: No authenticated session in current tab');
+      }
       return;
     }
 
     setIsLoading(true);
     try {
-      console.log('🔔 Fetching notifications for tab:', currentSession.tabId);
+      if (isDebug) {
+        console.log('🔔 Fetching notifications for tab:', currentSession.tabId);
+      }
       
       // Fetch both notifications and unread count
       const [notificationsResult, countResult] = await Promise.all([
@@ -132,7 +137,9 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     
     // Only set up polling if we have an authenticated session
     if (currentSession && currentSession.authToken) {
-      console.log('🔔 Setting up notification polling for tab:', currentSession.tabId);
+      if (isDebug) {
+        console.log('🔔 Setting up notification polling for tab:', currentSession.tabId);
+      }
       
       // Initial load
       refreshNotifications();
@@ -144,18 +151,24 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
         if (session && session.authToken) {
           refreshNotifications();
         } else {
-          console.log('⏭️ Skipping notification poll: Session expired for tab');
+          if (isDebug) {
+            console.log('⏭️ Skipping notification poll: Session expired for tab');
+          }
         }
       }, 30000);
       
       return () => {
-        console.log('🔔 Cleaning up notification polling for tab:', currentSession.tabId);
+        if (isDebug) {
+          console.log('🔔 Cleaning up notification polling for tab:', currentSession.tabId);
+        }
         clearInterval(interval);
       };
     } else {
-      console.log('⏭️ Skipping notification setup: No authenticated session');
+      if (isDebug) {
+        console.log('⏭️ Skipping notification setup: No authenticated session');
+      }
     }
-  }, [refreshNotifications]);
+  }, [refreshNotifications, isDebug]);
 
   const value: NotificationContextType = {
     notifications,

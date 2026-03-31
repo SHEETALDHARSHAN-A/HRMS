@@ -81,8 +81,15 @@ function App() {
     // Validate current tab's session on mount
     const accountManager = MultiAccountManager.getInstance();
     const currentSession = accountManager.getCurrentSession();
+    const pathname = window.location.pathname || '';
+    const isPublicRoute =
+      pathname.startsWith('/interview/') ||
+      pathname.startsWith('/career-page') ||
+      pathname.startsWith('/apply/') ||
+      pathname.startsWith('/auth') ||
+      pathname.startsWith('/verification/');
     
-    if (!currentSession) {
+    if (!currentSession && !isPublicRoute) {
       console.warn('⚠️ No session detected for this tab');
     }
     // NOTE: storage events are handled by the LogoutListener which shows

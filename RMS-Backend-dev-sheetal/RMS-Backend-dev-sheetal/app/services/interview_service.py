@@ -88,10 +88,10 @@ class InterviewAuthService:
 
         interview_type = str(getattr(schedule, "interview_type", "Agent_interview") or "Agent_interview").lower()
         if any(tag in interview_type for tag in ("coding", "apti", "aptitude", "mcq", "assessment")):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This round is an assessment round. Please use the coding/aptitude assessment flow.",
-            )
+            return {
+                "message": "This round is an assessment round. Please use the coding/aptitude assessment flow.",
+                "flow": "assessment",
+            }
 
         if any(tag in interview_type for tag in ("in_person", "in-person", "offline")):
             raise HTTPException(
@@ -123,7 +123,10 @@ class InterviewAuthService:
             # Send OTP email
             await send_otp_email(to_email=email, otp_code=otp_code, subject="Your Interview Verification Code", db=db)
             
-            return {"message": "OTP has been sent to your email."}
+            return {
+                "message": "OTP has been sent to your email.",
+                "flow": "live_interview",
+            }
             
         except Exception as e:
             logger.error(f"Error during OTP generation/sending for interview: {e}")

@@ -22,6 +22,7 @@ class MultiAccountManager {
   private static instance: MultiAccountManager;
   private currentTabId: string;
   private storageKey = 'multiAccountSessions';
+  private isDebug = !!import.meta.env.DEV;
   
   constructor() {
     // 💡 FIX 1: Use the imported getTabId() from axiosConfig.
@@ -79,11 +80,13 @@ class MultiAccountManager {
 
   // Store session data for current tab
   setCurrentSession(authToken: string, user: any, userRole: string, user_id: string): void {
-    console.log('🔧 setCurrentSession called with:', {
-      tabId: this.currentTabId, // This ID now comes from axiosConfig
-      userRole,
-      userId: user_id,
-    });
+    if (this.isDebug) {
+      console.log('🔧 setCurrentSession called with:', {
+        tabId: this.currentTabId,
+        userRole,
+        userId: user_id,
+      });
+    }
     
     if (!authToken) {
       console.error('❌ setCurrentSession called with empty token!');
@@ -138,12 +141,14 @@ class MultiAccountManager {
     // Find the session for *this* tab
     const storedSession = sessions.find(session => session.tabId === this.currentTabId);
     
-    console.log('🔍 getCurrentSession Debug:', {
-      tabId: this.currentTabId,
-      hasToken: !!sessionToken,
-      hasStoredSession: !!storedSession,
-      storedUserRole: storedSession?.userRole || 'none'
-    });
+    if (this.isDebug) {
+      console.log('🔍 getCurrentSession Debug:', {
+        tabId: this.currentTabId,
+        hasToken: !!sessionToken,
+        hasStoredSession: !!storedSession,
+        storedUserRole: storedSession?.userRole || 'none'
+      });
+    }
 
     // Success: We have a token and matching session data
     if (sessionToken && storedSession) {
@@ -160,7 +165,9 @@ class MultiAccountManager {
     // Fallback: We have a token, but no session data.
     // This happens if session storage was cleared. Return a minimal session.
     if (sessionToken && !storedSession) {
-      console.warn('⚠️ Token found but session data missing for tab. Rebuilding minimal session.', this.currentTabId);
+      if (this.isDebug) {
+        console.warn('⚠️ Token found but session data missing for tab. Rebuilding minimal session.', this.currentTabId);
+      }
 
       let recoveredRole = '';
       let recoveredUserId = '';
@@ -198,7 +205,9 @@ class MultiAccountManager {
     }
 
     // No token and no valid session
-    console.log('🔍 No valid session found for tab:', this.currentTabId);
+    if (this.isDebug) {
+      console.log('🔍 No valid session found for tab:', this.currentTabId);
+    }
     return null;
   }
 

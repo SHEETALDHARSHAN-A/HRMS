@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { interviewApi } from "../../api/interviewApi";
 import { InterviewRoom } from "../../components/interview/InterviewRoom";
 import { useToast } from "../../context/ModalContext";
@@ -8,6 +8,7 @@ import Button from "../../components/common/Button";
 import Input from "../../components/auth/Input";
 import { Loader2, KeyRound, Mail, LogIn } from "lucide-react";
 import OTPInput from "../../components/auth/OTPInput"; // Assuming you have this from AuthPage
+import { saveInterviewAccess } from "../../utils/interviewAccessAuth";
 
 type InterviewStep = "validate" | "otp" | "joining" | "in_progress";
 
@@ -17,6 +18,7 @@ interface LiveKitCredentials {
 }
 
 const InterviewLoginPage: React.FC = () => {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { showToast } = useToast();
 
@@ -30,11 +32,21 @@ const InterviewLoginPage: React.FC = () => {
     null
   );
 
+  const openAssessmentWorkspace = () => {
+    saveInterviewAccess(token, email, "assessment-round-login");
+    const params = new URLSearchParams({ token, email });
+    navigate(`/interview/coding?${params.toString()}`);
+  };
+
   // Pre-fill token from URL query param if it exists
   useEffect(() => {
     const urlToken = searchParams.get("token");
+    const urlEmail = searchParams.get("email");
     if (urlToken) {
       setToken(urlToken);
+    }
+    if (urlEmail) {
+      setEmail(urlEmail);
     }
   }, [searchParams]);
 
@@ -49,11 +61,24 @@ const InterviewLoginPage: React.FC = () => {
     setErrorMessage("");
 
     try {
-      await interviewApi.validateToken({ email, token });
+      const response = await interviewApi.validateToken({ email, token });
+      if (response?.flow === "assessment") {
+        showToast("Assessment round detected. Opening coding/aptitude workspace.", "success");
+        openAssessmentWorkspace();
+        return;
+      }
       showToast("Verification code sent to your email.", "success");
       setStep("otp");
     } catch (error: any) {
       const detail = error.response?.data?.detail || "An unknown error occurred.";
+
+      const isAssessmentRound = /assessment round|coding\/aptitude assessment flow/i.test(String(detail));
+      if (isAssessmentRound) {
+        showToast("Assessment round detected. Opening coding/aptitude workspace.", "success");
+        openAssessmentWorkspace();
+        return;
+      }
+
       setErrorMessage(detail);
       showToast(detail, "error");
     } finally {
@@ -73,6 +98,7 @@ const InterviewLoginPage: React.FC = () => {
 
     try {
       const response = await interviewApi.verifyOtp({ email, token, otp });
+      saveInterviewAccess(token, email, "interview-login-otp");
       setLiveKitCreds({
         url: response.livekit_url,
         token: response.livekit_token,
@@ -117,36 +143,35 @@ const InterviewLoginPage: React.FC = () => {
           }}
         />
         <div
-          className="relative mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-6 py-12 lg:flex-row lg:items-center"
+          className="relative mx-auto flex min-h-screen w-full max-w-5xl items-center px-4 py-8 sm:px-6"
           style={{ fontFamily: '"Space Grotesk", sans-serif' }}
         >
-          <div className="flex-1 space-y-6">
-            <p className="text-xs uppercase tracking-[0.32em] text-slate-400">Prayag RMS</p>
-            <h1 className="text-4xl font-semibold text-white md:text-5xl">
-              A focused, live interview experience
-            </h1>
-            <p className="max-w-xl text-base text-slate-200/90 md:text-lg">
-              Enter the interview room with a clean, distraction-free setup. We verify your identity, then open a secure LiveKit session at the scheduled time.
-            </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {[
-                { title: "Private access", desc: "Token-based entry and OTP verification." },
-                { title: "On-time join", desc: "Room unlocks 5 minutes before the slot." },
-                { title: "Live assessment", desc: "Coding workspace launches in a new tab." },
-                { title: "Secure audio", desc: "Built on LiveKit WebRTC streams." },
-              ].map((item) => (
-                <div
-                  key={item.title}
-                  className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur"
-                >
-                  <p className="text-sm font-semibold text-white">{item.title}</p>
-                  <p className="mt-1 text-xs text-slate-300">{item.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <div className="grid w-full gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+            <section className="rounded-3xl border border-white/10 bg-slate-900/55 p-6 shadow-2xl backdrop-blur">
+              <p className="text-[11px] uppercase tracking-[0.32em] text-slate-400">Prayag RMS</p>
+              <h1 className="mt-3 text-3xl font-semibold text-white sm:text-4xl">
+                Authorized Interview Access
+              </h1>
+              <p className="mt-3 max-w-xl text-sm text-slate-200/90 sm:text-base">
+                This login supports both live interviews and assessment rounds. For assessment rounds, you will be redirected directly to the coding/aptitude workspace after token validation.
+              </p>
 
-          <div className="w-full max-w-md">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {[
+                  { title: "Identity check", desc: "Email + token + OTP before room access." },
+                  { title: "Secure room", desc: "LiveKit session opens only after verification." },
+                  { title: "Assessment ready", desc: "Assessment rounds open coding/aptitude flow directly." },
+                  { title: "Compact flow", desc: "Two quick steps, no unnecessary screens." },
+                ].map((item) => (
+                  <div key={item.title} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <p className="text-sm font-semibold text-white">{item.title}</p>
+                    <p className="mt-1 text-xs text-slate-300">{item.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <div className="w-full">
             <div className="rounded-2xl bg-white/95 p-8 text-slate-900 shadow-2xl ring-1 ring-white/10 backdrop-blur">
               <div className="mb-6 flex items-center gap-3">
                 <Logo size="medium" className="shrink-0" />
@@ -154,6 +179,12 @@ const InterviewLoginPage: React.FC = () => {
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Candidate access</p>
                   <h2 className="text-lg font-semibold text-slate-900">Join Interview</h2>
                 </div>
+              </div>
+
+              <div className="mb-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <span className={`rounded-full px-2.5 py-1 ${step === "validate" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500"}`}>1 Identity</span>
+                <span className={`rounded-full px-2.5 py-1 ${step === "otp" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500"}`}>2 OTP</span>
+                <span className={`rounded-full px-2.5 py-1 ${step === "joining" || step === "in_progress" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500"}`}>3 Join</span>
               </div>
 
               {step === "validate" && (
@@ -259,6 +290,7 @@ const InterviewLoginPage: React.FC = () => {
                   <p className="mt-2 text-sm text-slate-600">We are preparing your interview room.</p>
                 </div>
               )}
+            </div>
             </div>
           </div>
         </div>

@@ -11,6 +11,7 @@ interface VerifyOtpPayload extends ValidateTokenPayload {
 
 interface ValidateTokenResponse {
   message: string;
+  flow?: "live_interview" | "assessment";
 }
 
 interface VerifyOtpResponse {

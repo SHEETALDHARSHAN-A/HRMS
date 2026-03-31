@@ -39,6 +39,27 @@ async def get_coding_question_route(
 
 
 @coding_router.post(
+    "/run",
+    response_model=StandardResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Run coding or MCQ assessment without final submission",
+)
+async def run_coding_solution_route(
+    request: CodingSubmitRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        service = CodingService(db)
+        run_result = await service.run_solution(request)
+        return ResponseBuilder.success(message="Run completed.", data=run_result)
+    except HTTPException as exc:
+        return ResponseBuilder.error(message=exc.detail, status_code=exc.status_code)
+    except Exception as exc:
+        logger.error("Error running coding solution: %s", exc, exc_info=True)
+        return ResponseBuilder.server_error("Unable to run coding submission.")
+
+
+@coding_router.post(
     "/submit",
     response_model=StandardResponse,
     status_code=status.HTTP_200_OK,
@@ -57,6 +78,28 @@ async def submit_coding_solution_route(
     except Exception as exc:
         logger.error("Error submitting coding solution: %s", exc, exc_info=True)
         return ResponseBuilder.server_error("Unable to evaluate coding submission.")
+
+
+@coding_router.get(
+    "/submission/latest",
+    response_model=StandardResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get latest assessment submission and evaluation",
+)
+async def get_latest_coding_submission_route(
+    token: str = Query(..., description="Interview token"),
+    email: EmailStr = Query(..., description="Candidate email"),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        service = CodingService(db)
+        submission = await service.get_latest_submission(token=token, email=str(email))
+        return ResponseBuilder.success(message="Latest submission fetched.", data=submission)
+    except HTTPException as exc:
+        return ResponseBuilder.error(message=exc.detail, status_code=exc.status_code)
+    except Exception as exc:
+        logger.error("Error fetching latest coding submission: %s", exc, exc_info=True)
+        return ResponseBuilder.server_error("Unable to fetch latest coding submission.")
 
 
 @coding_router.get(

@@ -51,13 +51,13 @@ class AgentRoundConfig(Base):
     coding_difficulty = Column(String, default='medium', nullable=True)
     coding_languages = Column(JSONB, default=list, nullable=True)
     provided_coding_question = Column(Text, nullable=True)
-    coding_test_case_mode = Column(String, default='provided', nullable=False)
+    coding_test_case_mode = Column(String, default='ai', nullable=False)
     coding_test_cases = Column(JSONB, default=list, nullable=True)
     coding_starter_code = Column(JSONB, default=dict, nullable=True)
 
     # MCQ challenge controls
     mcq_enabled = Column(Boolean, default=False, nullable=False)
-    mcq_question_mode = Column(String, default='provided', nullable=False)
+    mcq_question_mode = Column(String, default='ai', nullable=False)
     mcq_difficulty = Column(String, default='medium', nullable=True)
     mcq_questions = Column(JSONB, default=list, nullable=True)
     mcq_passing_score = Column(Integer, default=60, nullable=True)

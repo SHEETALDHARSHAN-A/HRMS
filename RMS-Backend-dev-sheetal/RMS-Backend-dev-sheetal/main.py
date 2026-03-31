@@ -32,7 +32,11 @@ config = AppConfig()
 app.state.jwt_secret_key = config.secret_key
 app.state.jwt_algorithm = config.algorithm
  
+app.add_middleware(JWTMiddleware)
+
 # --- CORS Middleware ---
+# Register CORS after JWT middleware so CORS headers are included
+# even when JWT middleware returns early (for example 401/403 responses).
 app.add_middleware(
     CORSMiddleware,
     # Allow origins should be strictly configured in a production .env file
@@ -41,8 +45,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
- 
-app.add_middleware(JWTMiddleware)
  
 # --- Router Inclusion ---
 app.include_router(v1_router, prefix="/v1")

@@ -126,7 +126,7 @@ axiosInstance.interceptors.request.use(
       try { return requestUrl === p || requestUrl.startsWith(p) || requestUrl.includes(p); } catch { return false; }
     });
 
-    if (!isExcluded && isJwtExpired(token)) {
+    if (!isExcluded && token && isJwtExpired(token)) {
       try {
         window.dispatchEvent(new CustomEvent('auth-error', {
           detail: {

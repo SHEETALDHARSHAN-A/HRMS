@@ -115,11 +115,6 @@ class Scheduling:
                     status_code=error_status,
                     detail="Invalid date: scheduled interview datetime cannot be more than 2 months in the future."
                 )
-            if request.interview_time < time(9, 0) or request.interview_time > time(18, 0):
-                raise HTTPException(
-                    status_code=error_status,
-                    detail="Invalid date or time: Interviews can only be scheduled between 09:00 and 18:00 UTC."
-                )
  
            
         except HTTPException:
@@ -373,11 +368,6 @@ class Scheduling:
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="Invalid date: scheduled interview datetime cannot be more than 2 months in the future.",
                 )
-            if request.interview_time < time(9, 0) or request.interview_time > time(18, 0):
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Invalid date or time: Interviews can only be scheduled between 09:00 and 18:00 UTC.",
-                )
         except HTTPException:
             raise
         except Exception:
@@ -429,11 +419,13 @@ class Scheduling:
                 if existing_policy_raw:
                     existing_policy = json.loads(existing_policy_raw)
                     duration_minutes = int(existing_policy.get("durationMinutes") or 60)
-                    secure_required = bool(existing_policy.get("secureBrowserRequired", True))
-                    proctor_required = bool(existing_policy.get("proctoringRequired", True))
+                    enforce_security = bool(existing_policy.get("enforceSecurity", False))
+                    secure_required = enforce_security and bool(existing_policy.get("secureBrowserRequired", False))
+                    proctor_required = enforce_security and bool(existing_policy.get("proctoringRequired", False))
                 else:
-                    secure_required = True
-                    proctor_required = True
+                    enforce_security = False
+                    secure_required = False
+                    proctor_required = False
 
                 assessment_end_utc = interview_datetime_utc + timedelta(minutes=duration_minutes)
                 refreshed_policy = {
@@ -441,6 +433,7 @@ class Scheduling:
                     "startAt": interview_datetime_utc.isoformat(),
                     "endAt": assessment_end_utc.isoformat(),
                     "durationMinutes": duration_minutes,
+                    "enforceSecurity": enforce_security,
                     "secureBrowserRequired": secure_required,
                     "proctoringRequired": proctor_required,
                     "allowTabSwitch": False,

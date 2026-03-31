@@ -1,6 +1,13 @@
+import asyncio
+import ast
 import json
 import logging
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import textwrap
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -85,6 +92,92 @@ class CodingService:
         public_payload, full_payload = await self._build_assessment_payload(context)
         await self._store_assessment_payload(token=token, email=email, payload=full_payload)
         return public_payload
+
+    async def run_solution(self, request: CodingSubmitRequest) -> Dict[str, Any]:
+        email = str(request.email)
+        context = await self._resolve_candidate_context(token=request.token, email=email)
+        security_validation = self._enforce_submission_security(request=request, context=context)
+
+        stored_payload = await self._load_assessment_payload(token=request.token, email=email)
+        question_payload = stored_payload or request.question
+        if not question_payload:
+            _, question_payload = await self._build_assessment_payload(context)
+
+        requested_challenge_type = (request.challengeType or "").strip().lower()
+        if requested_challenge_type not in {"coding", "mcq"}:
+            requested_challenge_type = ""
+
+        challenge_type = (
+            requested_challenge_type
+            or str(question_payload.get("challengeType") or "").strip().lower()
+            or context.get("challenge_type", "coding")
+        )
+        if challenge_type not in {"coding", "mcq"}:
+            challenge_type = "coding"
+
+        if challenge_type == "mcq":
+            submitted_answers = [
+                {"questionId": item.questionId, "selectedOptionId": item.selectedOptionId}
+                for item in (request.mcqAnswers or [])
+            ]
+            evaluation = self._evaluate_mcq_submission(
+                question_payload=question_payload,
+                mcq_answers=submitted_answers,
+            )
+            return {
+                "challengeType": "mcq",
+                "score": evaluation.get("score"),
+                "feedback": evaluation.get("feedback"),
+                "breakdown": evaluation.get("breakdown"),
+                "testCaseResults": evaluation.get("testCaseResults"),
+                "evaluationSource": evaluation.get("evaluationSource"),
+                "passed": evaluation.get("passed"),
+                "maxScore": evaluation.get("maxScore"),
+                "securityValidation": security_validation,
+                "saved": False,
+            }
+
+        submission_code = (request.code or "").strip()
+        if not submission_code:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Code is required to run this coding submission",
+            )
+
+        allowed_languages = self._normalize_languages(getattr(context["config"], "coding_languages", None))
+        requested_language = self._canonical_language(request.language or allowed_languages[0])
+        if requested_language not in allowed_languages:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported language '{requested_language}'. Allowed: {', '.join(allowed_languages)}",
+            )
+
+        selected_question_payload = self._select_coding_question_payload(
+            question_payload=question_payload,
+            requested_question_id=getattr(request, "questionId", None),
+        )
+        normalized_test_cases = self._normalize_test_cases(selected_question_payload.get("testCases"))
+        evaluation = await self._evaluate_test_cases(
+            question_payload=selected_question_payload,
+            code=submission_code,
+            language=requested_language,
+            test_cases=normalized_test_cases,
+            allow_ai_fallback=False,
+        )
+
+        return {
+            "challengeType": "coding",
+            "language": requested_language,
+            "score": evaluation.get("score"),
+            "summary": evaluation.get("summary"),
+            "testCaseResults": evaluation.get("results"),
+            "evaluationSource": evaluation.get("source"),
+            "strengths": evaluation.get("strengths") or [],
+            "improvements": evaluation.get("improvements") or [],
+            "question": selected_question_payload,
+            "securityValidation": security_validation,
+            "saved": False,
+        }
 
     async def submit_solution(self, request: CodingSubmitRequest) -> Dict[str, Any]:
         email = str(request.email)
@@ -175,21 +268,9 @@ class CodingService:
         await self.db.commit()
         await self.db.refresh(submission)
 
-        return {
-            "submissionId": str(submission.id),
-            "challengeType": submission.challenge_type,
-            "score": submission.ai_score,
-            "feedback": submission.ai_feedback,
-            "breakdown": submission.ai_breakdown,
-            "testCaseResults": submission.test_case_results,
-            "passed": submission.passed,
-            "maxScore": submission.max_score,
-            "evaluationSource": submission.evaluation_source,
-            "language": submission.language,
-            "status": submission.status,
-            "question": submission.question_payload,
-            "securityValidation": security_validation,
-        }
+        response_payload = self._serialize_submission(submission)
+        response_payload["securityValidation"] = security_validation
+        return response_payload
 
     async def get_submission(self, submission_id: str, token: str, email: str) -> Dict[str, Any]:
         context = await self._resolve_candidate_context(token=token, email=email)
@@ -211,21 +292,25 @@ class CodingService:
         if not submission:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Submission not found")
 
-        return {
-            "submissionId": str(submission.id),
-            "challengeType": submission.challenge_type,
-            "score": submission.ai_score,
-            "feedback": submission.ai_feedback,
-            "breakdown": submission.ai_breakdown,
-            "testCaseResults": submission.test_case_results,
-            "passed": submission.passed,
-            "maxScore": submission.max_score,
-            "evaluationSource": submission.evaluation_source,
-            "language": submission.language,
-            "status": submission.status,
-            "question": submission.question_payload,
-            "createdAt": submission.created_at.isoformat() if submission.created_at else None,
-        }
+        return self._serialize_submission(submission)
+
+    async def get_latest_submission(self, token: str, email: str) -> Dict[str, Any]:
+        context = await self._resolve_candidate_context(token=token, email=email)
+
+        stmt = (
+            select(CodingSubmission)
+            .where(CodingSubmission.profile_id == context["profile_id"])
+            .where(CodingSubmission.interview_token == token)
+            .order_by(CodingSubmission.created_at.desc(), CodingSubmission.updated_at.desc())
+            .limit(1)
+        )
+        result = await self.db.execute(stmt)
+        submission = result.scalar_one_or_none()
+
+        if not submission:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No submission found yet")
+
+        return self._serialize_submission(submission)
 
     async def _resolve_candidate_context(self, token: str, email: str) -> Dict[str, Any]:
         stmt = (
@@ -320,10 +405,11 @@ class CodingService:
 
     def _enforce_submission_security(self, request: CodingSubmitRequest, context: Dict[str, Any]) -> Dict[str, Any]:
         policy = context.get("runtime_policy") if isinstance(context.get("runtime_policy"), dict) else {}
-        secure_required = bool(policy.get("secureBrowserRequired", False))
-        proctor_required = bool(policy.get("proctoringRequired", False))
+        enforce_security = bool(policy.get("enforceSecurity", False))
+        secure_required = enforce_security and bool(policy.get("secureBrowserRequired", False))
+        proctor_required = enforce_security and bool(policy.get("proctoringRequired", False))
 
-        if not secure_required and not proctor_required:
+        if not enforce_security or (not secure_required and not proctor_required):
             return {
                 "required": False,
                 "validated": False,
@@ -375,6 +461,7 @@ class CodingService:
         return {
             "required": True,
             "validated": True,
+            "enforceSecurity": enforce_security,
             "secureBrowserRequired": secure_required,
             "proctoringRequired": proctor_required,
         }
@@ -428,6 +515,8 @@ class CodingService:
 
     async def _build_coding_question(self, config: AgentRoundConfig) -> Dict[str, Any]:
         question_mode = (getattr(config, "coding_question_mode", "ai") or "ai").lower()
+        if question_mode not in {"ai", "provided"}:
+            question_mode = "ai"
         difficulty = (getattr(config, "coding_difficulty", "medium") or "medium").lower()
         languages = self._normalize_languages(getattr(config, "coding_languages", None))
         provided_question = (getattr(config, "provided_coding_question", None) or "").strip()
@@ -486,7 +575,9 @@ class CodingService:
             )
             base_questions.append(generated_question)
 
-        test_case_mode = (getattr(config, "coding_test_case_mode", "provided") or "provided").lower()
+        test_case_mode = (getattr(config, "coding_test_case_mode", "ai") or "ai").lower()
+        if test_case_mode not in {"ai", "provided"}:
+            test_case_mode = "ai"
         configured_test_cases = self._normalize_test_cases(getattr(config, "coding_test_cases", None))
 
         starter_code = self._build_starter_code(
@@ -501,6 +592,9 @@ class CodingService:
                 "source": str(raw_question.get("source") or "ai"),
                 "title": str(raw_question.get("title") or f"Coding Challenge {idx + 1}"),
                 "problem": str(raw_question.get("problem") or "Solve the coding task."),
+                "inputFormat": str(raw_question.get("inputFormat", raw_question.get("input_format", "")) or "").strip() or None,
+                "outputFormat": str(raw_question.get("outputFormat", raw_question.get("output_format", "")) or "").strip() or None,
+                "examples": self._normalize_examples(raw_question.get("examples")),
                 "constraints": [
                     str(item).strip()
                     for item in (raw_question.get("constraints") or [])
@@ -537,26 +631,38 @@ class CodingService:
             normalized_question["starterCode"] = starter_code
             normalized_question["questionType"] = question_type
             normalized_question["categories"] = categories
+            normalized_question = self._ensure_coding_question_details(
+                question_payload=normalized_question,
+                test_cases=test_cases,
+            )
             question_pool.append(normalized_question)
 
         if not question_pool:
+            fallback_test_cases = configured_test_cases or self._default_test_cases()
+            fallback_question = {
+                "id": "coding_q_1",
+                "source": "fallback",
+                "title": "Coding Challenge",
+                "problem": "Solve the coding task.",
+                "inputFormat": "Input is provided to solve(input_data).",
+                "outputFormat": "Return the expected answer for the given input.",
+                "examples": [],
+                "constraints": ["Handle edge cases and invalid input."],
+                "hints": [],
+                "difficulty": difficulty,
+                "languages": languages,
+                "questionMode": question_mode,
+                "testCaseMode": test_case_mode,
+                "testCases": fallback_test_cases,
+                "starterCode": starter_code,
+                "questionType": question_type,
+                "categories": categories,
+            }
             question_pool.append(
-                {
-                    "id": "coding_q_1",
-                    "source": "fallback",
-                    "title": "Coding Challenge",
-                    "problem": "Solve the coding task.",
-                    "constraints": ["Handle edge cases and invalid input."],
-                    "hints": [],
-                    "difficulty": difficulty,
-                    "languages": languages,
-                    "questionMode": question_mode,
-                    "testCaseMode": test_case_mode,
-                    "testCases": configured_test_cases or self._default_test_cases(),
-                    "starterCode": starter_code,
-                    "questionType": question_type,
-                    "categories": categories,
-                }
+                self._ensure_coding_question_details(
+                    question_payload=fallback_question,
+                    test_cases=fallback_test_cases,
+                )
             )
 
         active_question = dict(question_pool[0])
@@ -568,7 +674,9 @@ class CodingService:
         return active_question
 
     async def _build_mcq_question(self, config: AgentRoundConfig) -> Dict[str, Any]:
-        question_mode = (getattr(config, "mcq_question_mode", "provided") or "provided").lower()
+        question_mode = (getattr(config, "mcq_question_mode", "ai") or "ai").lower()
+        if question_mode not in {"ai", "provided"}:
+            question_mode = "ai"
         difficulty = (getattr(config, "mcq_difficulty", "medium") or "medium").lower()
         configured_questions = self._normalize_mcq_questions(getattr(config, "mcq_questions", None))
 
@@ -667,6 +775,15 @@ class CodingService:
                 f"Build a function in {languages[0]} to solve a {difficulty} level {primary_skill} task. "
                 "Your function should handle edge cases and include a brief explanation of your approach."
             ),
+            "inputFormat": "The input format is provided to your solve function as input_data.",
+            "outputFormat": "Return the expected result for the provided input_data.",
+            "examples": [
+                {
+                    "input": "input_data = [2, 7, 11, 15], target = 9",
+                    "output": "[0, 1]",
+                    "explanation": "Indices 0 and 1 add up to the target 9.",
+                }
+            ],
             "constraints": [
                 "Time complexity should be explained.",
                 "Handle invalid or empty input safely.",
@@ -687,6 +804,9 @@ class CodingService:
 Generate one coding interview question as strict JSON with keys:
 - title (string)
 - problem (string)
+- inputFormat (string)
+- outputFormat (string)
+- examples (array of objects with input, output, explanation)
 - constraints (array of strings)
 - hints (array of strings)
 
@@ -699,6 +819,10 @@ Context:
 - Question type: {type_text}
 - Categories: {category_text}
 - Custom guidance: {custom_guidance or 'none'}
+
+Requirements:
+- Include at least one concrete sample input/output example.
+- Keep all fields concise and implementation-ready.
 
 Return only valid JSON.
 """
@@ -718,6 +842,10 @@ Return only valid JSON.
             if not parsed:
                 return fallback_question
             parsed["source"] = "ai"
+            parsed.setdefault("inputFormat", fallback_question["inputFormat"])
+            parsed.setdefault("outputFormat", fallback_question["outputFormat"])
+            parsed_examples = self._normalize_examples(parsed.get("examples"))
+            parsed["examples"] = parsed_examples or fallback_question["examples"]
             parsed.setdefault("constraints", fallback_question["constraints"])
             parsed.setdefault("hints", fallback_question["hints"])
             parsed["questionType"] = type_text
@@ -898,6 +1026,7 @@ Context:
         code: str,
         language: str,
         test_cases: List[Dict[str, Any]],
+        allow_ai_fallback: bool = True,
     ) -> Dict[str, Any]:
         if not test_cases:
             return {
@@ -907,6 +1036,37 @@ Context:
                 "source": "no-test-cases",
                 "strengths": [],
                 "improvements": ["Add preconfigured test cases for objective evaluation."],
+            }
+
+        runtime_result = await self._evaluate_test_cases_runtime(
+            code=code,
+            language=language,
+            test_cases=test_cases,
+        )
+        if runtime_result:
+            return runtime_result
+
+        if not allow_ai_fallback:
+            language_name = self._canonical_language(language)
+            return {
+                "score": None,
+                "results": [
+                    {
+                        "id": str(case.get("id") or ""),
+                        "input": case.get("input"),
+                        "expectedOutput": case.get("expectedOutput"),
+                        "isHidden": bool(case.get("isHidden", False)),
+                        "weight": int(case.get("weight", 1)),
+                        "passed": False,
+                        "actualOutput": None,
+                        "notes": f"Runtime execution is currently unavailable for language '{language_name}'.",
+                    }
+                    for case in test_cases
+                ],
+                "summary": f"Runtime preview is unavailable for language '{language_name}'.",
+                "source": "runtime-unavailable",
+                "strengths": [],
+                "improvements": ["Switch to Python/JavaScript runtime preview or submit for AI-assisted evaluation."],
             }
 
         ai_result = await self._evaluate_test_cases_with_ai(
@@ -919,6 +1079,366 @@ Context:
             return ai_result
 
         return self._evaluate_test_cases_heuristic(code=code, language=language, test_cases=test_cases)
+
+    async def _evaluate_test_cases_runtime(
+        self,
+        *,
+        code: str,
+        language: str,
+        test_cases: List[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        runtime_lang = self._canonical_language(language)
+        runner = None
+        runtime_source = ""
+        runtime_label = ""
+
+        if runtime_lang == "python":
+            runner = self._run_python_case_sync
+            runtime_source = "runtime-python"
+            runtime_label = "Python runtime"
+        elif runtime_lang == "javascript" and shutil.which("node"):
+            runner = self._run_javascript_case_sync
+            runtime_source = "runtime-javascript"
+            runtime_label = "JavaScript runtime"
+
+        if runner is None:
+            return None
+
+        raw_results: List[Dict[str, Any]] = []
+        for case in test_cases:
+            case_id = str(case.get("id") or "").strip() or f"tc_{len(raw_results) + 1}"
+            expected_output = str(case.get("expectedOutput") or "").strip()
+            runtime_input = self._parse_runtime_input(case.get("input"))
+
+            runtime_eval = await asyncio.to_thread(
+                runner,
+                code,
+                runtime_input,
+            )
+
+            if runtime_eval.get("ok"):
+                return_text = self._normalize_runtime_output(runtime_eval.get("returnValue"))
+                stdout_text = str(runtime_eval.get("stdout") or "").strip()
+                actual_text = return_text
+                if stdout_text:
+                    actual_text = f"stdout: {stdout_text} | return: {return_text}"
+
+                passed = self._runtime_outputs_match(
+                    expected_output=expected_output,
+                    return_output=return_text,
+                    stdout_output=stdout_text,
+                )
+                notes = f"Executed in {runtime_label}."
+            else:
+                actual_text = str(runtime_eval.get("error") or "Runtime execution failed.")
+                passed = False
+                notes = "Runtime execution failed."
+
+            raw_results.append(
+                {
+                    "id": case_id,
+                    "passed": passed,
+                    "actualOutput": actual_text,
+                    "notes": notes,
+                }
+            )
+
+        scored = self._score_test_case_results(test_cases=test_cases, raw_results=raw_results)
+        scored["source"] = runtime_source
+
+        if scored["score"] >= 80:
+            scored["strengths"] = ["Outputs matched expected values for most test cases."]
+            scored["improvements"] = []
+        else:
+            scored["strengths"] = []
+            scored["improvements"] = ["Fix failing test cases by matching expected outputs exactly."]
+
+        return scored
+
+        def _run_javascript_case_sync(self, code: str, input_data: Any, timeout_seconds: int = 4) -> Dict[str, Any]:
+                runner_script = textwrap.dedent(
+                        """
+                        const fs = require('fs');
+                        const vm = require('vm');
+
+                        const parseInput = (raw) => {
+                            if (typeof raw !== 'string') return raw;
+                            const text = raw.trim();
+                            if (!text) return raw;
+                            try { return JSON.parse(text); } catch (_) {}
+                            return raw;
+                        };
+
+                        (async () => {
+                            try {
+                                const payload = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+                                const codePath = payload.codePath;
+                                if (!codePath) throw new Error('Missing code path');
+
+                                const userCode = fs.readFileSync(codePath, 'utf8');
+                                const logs = [];
+                                const sandbox = {
+                                    console: {
+                                        log: (...args) => logs.push(args.map((v) => String(v)).join(' ')),
+                                    },
+                                    module: { exports: {} },
+                                    exports: {},
+                                    require,
+                                    JSON,
+                                    Math,
+                                    Date,
+                                    setTimeout,
+                                    clearTimeout,
+                                };
+                                vm.createContext(sandbox);
+                                vm.runInContext(userCode, sandbox, { timeout: 2500 });
+
+                                let solveFn = null;
+                                if (typeof sandbox.solve === 'function') {
+                                    solveFn = sandbox.solve;
+                                } else if (
+                                    sandbox.module &&
+                                    sandbox.module.exports &&
+                                    typeof sandbox.module.exports.solve === 'function'
+                                ) {
+                                    solveFn = sandbox.module.exports.solve;
+                                }
+
+                                if (!solveFn) {
+                                    throw new Error("Function 'solve(input_data)' is not defined");
+                                }
+
+                                const parsedInput = parseInput(payload.input);
+                                const value = solveFn(parsedInput);
+                                const result = value && typeof value.then === 'function' ? await value : value;
+
+                                process.stdout.write(
+                                    JSON.stringify({
+                                        ok: true,
+                                        returnValue: result,
+                                        stdout: logs.join('\\n'),
+                                    })
+                                );
+                            } catch (err) {
+                                process.stdout.write(
+                                    JSON.stringify({
+                                        ok: false,
+                                        error: err && err.stack ? String(err.stack).split('\\n')[0] : String(err),
+                                    })
+                                );
+                            }
+                        })();
+                        """
+                ).strip()
+
+                try:
+                        with tempfile.TemporaryDirectory(prefix="rms_eval_js_") as tmp_dir:
+                                code_path = f"{tmp_dir}/candidate_submission.js"
+                                runner_path = f"{tmp_dir}/runner.js"
+
+                                with open(code_path, "w", encoding="utf-8") as candidate_file:
+                                        candidate_file.write(code)
+
+                                with open(runner_path, "w", encoding="utf-8") as runner_file:
+                                        runner_file.write(runner_script)
+
+                                payload = json.dumps({"codePath": code_path, "input": input_data}, ensure_ascii=True)
+                                completed = subprocess.run(
+                                        ["node", runner_path],
+                                        input=payload,
+                                        text=True,
+                                        capture_output=True,
+                                        timeout=timeout_seconds,
+                                )
+
+                                stdout_text = (completed.stdout or "").strip()
+                                stderr_text = (completed.stderr or "").strip()
+
+                                if completed.returncode != 0:
+                                        return {
+                                                "ok": False,
+                                                "error": stderr_text or stdout_text or f"Execution failed with exit code {completed.returncode}.",
+                                        }
+
+                                if not stdout_text:
+                                        return {"ok": False, "error": "No runtime output received from evaluator."}
+
+                                parsed = json.loads(stdout_text.splitlines()[-1])
+                                if not isinstance(parsed, dict):
+                                        return {"ok": False, "error": "Invalid runtime response format."}
+                                if not parsed.get("ok"):
+                                        return {"ok": False, "error": str(parsed.get("error") or "Runtime execution failed.")}
+
+                                return {
+                                        "ok": True,
+                                        "returnValue": parsed.get("returnValue"),
+                                        "stdout": str(parsed.get("stdout") or ""),
+                                }
+                except subprocess.TimeoutExpired:
+                        return {"ok": False, "error": "Execution timed out."}
+                except Exception as exc:
+                        return {"ok": False, "error": f"Runtime execution unavailable: {exc}"}
+
+    def _run_python_case_sync(self, code: str, input_data: Any, timeout_seconds: int = 4) -> Dict[str, Any]:
+        runner_script = textwrap.dedent(
+            """
+            import ast
+            import contextlib
+            import importlib.util
+            import io
+            import json
+            import sys
+            import traceback
+
+            def _parse_input(raw):
+                if isinstance(raw, str):
+                    txt = raw.strip()
+                    if not txt:
+                        return raw
+                    for parser in (json.loads, ast.literal_eval):
+                        try:
+                            return parser(txt)
+                        except Exception:
+                            pass
+                return raw
+
+            try:
+                payload = json.loads(sys.stdin.read() or "{}")
+                code_path = payload.get("codePath")
+                if not code_path:
+                    raise ValueError("Missing code path")
+
+                spec = importlib.util.spec_from_file_location("candidate_submission", code_path)
+                module = importlib.util.module_from_spec(spec)
+                if spec is None or spec.loader is None:
+                    raise RuntimeError("Unable to load candidate module")
+
+                output_buffer = io.StringIO()
+                with contextlib.redirect_stdout(output_buffer):
+                    spec.loader.exec_module(module)
+                    solve = getattr(module, "solve", None)
+                    if not callable(solve):
+                        raise AttributeError("Function 'solve(input_data)' is not defined")
+                    parsed_input = _parse_input(payload.get("input"))
+                    result = solve(parsed_input)
+
+                print(
+                    json.dumps(
+                        {
+                            "ok": True,
+                            "returnValue": result,
+                            "stdout": output_buffer.getvalue(),
+                        },
+                        ensure_ascii=True,
+                        default=str,
+                    )
+                )
+            except Exception:
+                print(
+                    json.dumps(
+                        {
+                            "ok": False,
+                            "error": traceback.format_exc(limit=1),
+                        },
+                        ensure_ascii=True,
+                    )
+                )
+            """
+        ).strip()
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="rms_eval_") as tmp_dir:
+                code_path = f"{tmp_dir}/candidate_submission.py"
+                runner_path = f"{tmp_dir}/runner.py"
+
+                with open(code_path, "w", encoding="utf-8") as candidate_file:
+                    candidate_file.write(code)
+
+                with open(runner_path, "w", encoding="utf-8") as runner_file:
+                    runner_file.write(runner_script)
+
+                payload = json.dumps({"codePath": code_path, "input": input_data}, ensure_ascii=True)
+                completed = subprocess.run(
+                    [sys.executable, "-I", runner_path],
+                    input=payload,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout_seconds,
+                )
+
+                stdout_text = (completed.stdout or "").strip()
+                stderr_text = (completed.stderr or "").strip()
+
+                if completed.returncode != 0:
+                    return {
+                        "ok": False,
+                        "error": stderr_text or stdout_text or f"Execution failed with exit code {completed.returncode}.",
+                    }
+
+                if not stdout_text:
+                    return {"ok": False, "error": "No runtime output received from evaluator."}
+
+                parsed = json.loads(stdout_text.splitlines()[-1])
+                if not isinstance(parsed, dict):
+                    return {"ok": False, "error": "Invalid runtime response format."}
+                if not parsed.get("ok"):
+                    return {"ok": False, "error": str(parsed.get("error") or "Runtime execution failed.")}
+
+                return {
+                    "ok": True,
+                    "returnValue": parsed.get("returnValue"),
+                    "stdout": str(parsed.get("stdout") or ""),
+                }
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "Execution timed out."}
+        except Exception as exc:
+            return {"ok": False, "error": f"Runtime execution unavailable: {exc}"}
+
+    @staticmethod
+    def _parse_runtime_input(raw_input: Any) -> Any:
+        if not isinstance(raw_input, str):
+            return raw_input
+
+        stripped = raw_input.strip()
+        if not stripped:
+            return raw_input
+
+        for parser in (json.loads, ast.literal_eval):
+            try:
+                return parser(stripped)
+            except Exception:
+                continue
+
+        return raw_input
+
+    @staticmethod
+    def _normalize_runtime_output(value: Any) -> str:
+        if value is None:
+            return "None"
+        if isinstance(value, str):
+            return value.strip()
+        try:
+            return json.dumps(value, ensure_ascii=True, sort_keys=True)
+        except Exception:
+            return str(value).strip()
+
+    @staticmethod
+    def _runtime_outputs_match(*, expected_output: str, return_output: str, stdout_output: str) -> bool:
+        expected = str(expected_output or "").strip()
+        if not expected:
+            return True
+
+        expected_norm = re.sub(r"\s+", " ", expected).strip().lower()
+        return_norm = re.sub(r"\s+", " ", str(return_output or "")).strip().lower()
+        stdout_norm = re.sub(r"\s+", " ", str(stdout_output or "")).strip().lower()
+
+        if expected_norm == return_norm or expected_norm == stdout_norm:
+            return True
+        if return_norm and expected_norm in return_norm:
+            return True
+        if stdout_norm and expected_norm in stdout_norm:
+            return True
+        return False
 
     async def _evaluate_test_cases_with_ai(
         self,
@@ -1346,6 +1866,15 @@ Return only valid JSON.
             "source": source,
             "title": title,
             "problem": str(prompt or "").strip(),
+            "inputFormat": "Use the function signature in starter code to parse input_data.",
+            "outputFormat": "Return the computed answer in the expected format.",
+            "examples": [
+                {
+                    "input": "Refer to the prompt for sample input.",
+                    "output": "Return the expected output for that input.",
+                    "explanation": "Show how the output is derived from the input.",
+                }
+            ],
             "constraints": [
                 "Write clean, readable code.",
                 "Handle invalid and edge inputs safely.",
@@ -1356,6 +1885,115 @@ Return only valid JSON.
             "questionType": question_type,
             "categories": categories or [],
         }
+
+    @staticmethod
+    def _normalize_examples(raw_examples: Optional[Any]) -> List[Dict[str, str]]:
+        if not isinstance(raw_examples, list):
+            return []
+
+        normalized: List[Dict[str, str]] = []
+        for raw_item in raw_examples:
+            if isinstance(raw_item, dict):
+                sample_input = str(
+                    raw_item.get("input", raw_item.get("sampleInput", raw_item.get("stdin", ""))) or ""
+                ).strip()
+                sample_output = str(
+                    raw_item.get("output", raw_item.get("expectedOutput", raw_item.get("sampleOutput", ""))) or ""
+                ).strip()
+                explanation = str(raw_item.get("explanation", raw_item.get("note", "")) or "").strip()
+            else:
+                sample_input = ""
+                sample_output = ""
+                explanation = str(raw_item or "").strip()
+
+            if not sample_input and not sample_output and not explanation:
+                continue
+
+            normalized.append(
+                {
+                    "input": sample_input,
+                    "output": sample_output,
+                    "explanation": explanation,
+                }
+            )
+
+        return normalized[:5]
+
+    @staticmethod
+    def _examples_from_test_cases(test_cases: List[Dict[str, Any]], limit: int = 2) -> List[Dict[str, str]]:
+        examples: List[Dict[str, str]] = []
+        for case in test_cases:
+            if bool(case.get("isHidden", False)):
+                continue
+
+            sample_input = str(case.get("input") or "").strip()
+            sample_output = str(case.get("expectedOutput") or "").strip()
+            if not sample_input and not sample_output:
+                continue
+
+            examples.append(
+                {
+                    "input": sample_input,
+                    "output": sample_output,
+                    "explanation": "Sample derived from visible test case.",
+                }
+            )
+            if len(examples) >= limit:
+                break
+
+        return examples
+
+    def _ensure_coding_question_details(
+        self,
+        *,
+        question_payload: Dict[str, Any],
+        test_cases: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        detailed = dict(question_payload)
+        problem = str(detailed.get("problem") or "").strip() or "Solve the coding task."
+        input_format = str(detailed.get("inputFormat") or "").strip() or "Input is provided to solve(input_data)."
+        output_format = str(detailed.get("outputFormat") or "").strip() or "Return the expected result for input_data."
+
+        examples = self._normalize_examples(detailed.get("examples"))
+        if not examples:
+            examples = self._examples_from_test_cases(test_cases=test_cases)
+        if not examples:
+            examples = [
+                {
+                    "input": "Sample input",
+                    "output": "Sample output",
+                    "explanation": "Explain how the sample output is derived from the sample input.",
+                }
+            ]
+
+        detailed["problem"] = problem
+        detailed["inputFormat"] = input_format
+        detailed["outputFormat"] = output_format
+        detailed["examples"] = examples
+
+        existing_detailed_prompt = str(detailed.get("detailedPrompt") or "").strip()
+        if not existing_detailed_prompt:
+            lines = [
+                problem,
+                "",
+                "Input Format:",
+                input_format,
+                "",
+                "Output Format:",
+                output_format,
+                "",
+                "Sample Input and Output:",
+            ]
+            for index, sample in enumerate(examples, start=1):
+                lines.append(f"Example {index} Input: {sample.get('input') or 'N/A'}")
+                lines.append(f"Example {index} Output: {sample.get('output') or 'N/A'}")
+                explanation = str(sample.get("explanation") or "").strip()
+                if explanation:
+                    lines.append(f"Example {index} Explanation: {explanation}")
+                lines.append("")
+            detailed["detailedPrompt"] = "\n".join(lines).strip()
+
+        return detailed
 
     def _top_up_mcq_questions(self, questions: List[Dict[str, Any]], target_count: int) -> List[Dict[str, Any]]:
         target_count = self._coerce_count(target_count, default=5, minimum=1, maximum=100)
@@ -1629,6 +2267,24 @@ Return only valid JSON.
     @staticmethod
     def _assessment_payload_key(token: str, email: str) -> str:
         return f"assessment_question:{str(token).strip()}:{str(email).strip().lower()}"
+
+    @staticmethod
+    def _serialize_submission(submission: CodingSubmission) -> Dict[str, Any]:
+        return {
+            "submissionId": str(submission.id),
+            "challengeType": submission.challenge_type,
+            "score": submission.ai_score,
+            "feedback": submission.ai_feedback,
+            "breakdown": submission.ai_breakdown,
+            "testCaseResults": submission.test_case_results,
+            "passed": submission.passed,
+            "maxScore": submission.max_score,
+            "evaluationSource": submission.evaluation_source,
+            "language": submission.language,
+            "status": submission.status,
+            "question": submission.question_payload,
+            "createdAt": submission.created_at.isoformat() if submission.created_at else None,
+        }
 
     @staticmethod
     def _detect_challenge_type(config: AgentRoundConfig) -> str:

@@ -350,10 +350,8 @@ class ProfessionalInterviewAgent(Agent):
         frames_to_use = self.current_frames()
         
         if frames_to_use:
-            # Add screen share frames for analysis
-            # This is great for the "Live Coding Session"
-            image_content = ImageContent(image=frames_to_use[0][1], inference_detail="auto")
-            copied_ctx.add_message(role="user", content=["[Current screen share view]", image_content])
+            # Groq text models expect string content; avoid sending image payloads here.
+            copied_ctx.add_message(role="user", content="[Current screen share view captured]")
         
         # Add the main system prompt
         copied_ctx.add_message(role="system", content=self.current_system_instructions)

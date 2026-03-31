@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ErrorBoundary from "../common/ErrorBoundary";
 import { getCodingQuestion, type CodingQuestion } from "../../api/codingApi";
+import { saveInterviewAccess } from "../../utils/interviewAccessAuth";
 
 interface InterviewRoomProps {
   token: string;
@@ -35,6 +36,11 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
     const target = `/interview/coding?token=${encodeURIComponent(interviewToken)}&email=${encodeURIComponent(candidateEmail)}`;
     window.open(target, "_blank", "noopener,noreferrer");
   };
+
+  useEffect(() => {
+    if (!interviewToken || !candidateEmail) return;
+    saveInterviewAccess(interviewToken, candidateEmail, "interview-room");
+  }, [interviewToken, candidateEmail]);
 
   useEffect(() => {
     if (!interviewToken || !candidateEmail) return;
@@ -67,6 +73,8 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         {`@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
         .interview-shell { font-family: "Space Grotesk", sans-serif; }
         .interview-shell .lk-video-conference { height: 100%; border-radius: 20px; overflow: hidden; background: #0b1220; }
+        .interview-shell .lk-video-conference .lk-control-bar { display: none; }
+        .interview-shell .custom-controls .lk-control-bar { display: flex; }
         .interview-shell .lk-control-bar { background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 999px; padding: 8px 12px; margin: 12px auto 0; max-width: 520px; }
         .interview-shell .lk-button { border-radius: 999px; }
         `}
@@ -129,15 +137,17 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
                 <VideoConference />
 
                 {/* Custom Controls */}
-                <ControlBar
-                  controls={{
-                    microphone: true,
-                    camera: true,
-                    screenShare: true,
-                    leave: true,
-                    chat: false, // Disable chat to avoid ChatToggle/layout-context errors
-                  }}
-                />
+                <div className="custom-controls">
+                  <ControlBar
+                    controls={{
+                      microphone: true,
+                      camera: true,
+                      screenShare: true,
+                      leave: true,
+                      chat: false, // Disable chat to avoid ChatToggle/layout-context errors
+                    }}
+                  />
+                </div>
 
                 {/* Handles all remote audio tracks */}
                 <RoomAudioRenderer />
