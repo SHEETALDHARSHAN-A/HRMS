@@ -73,10 +73,13 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
         {`@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
         .interview-shell { font-family: "Space Grotesk", sans-serif; }
         .interview-shell .lk-video-conference { height: 100%; border-radius: 20px; overflow: hidden; background: #0b1220; }
-        .interview-shell .lk-video-conference .lk-control-bar { display: none; }
-        .interview-shell .custom-controls .lk-control-bar { display: flex; }
-        .interview-shell .lk-control-bar { background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 999px; padding: 8px 12px; margin: 12px auto 0; max-width: 520px; }
-        .interview-shell .lk-button { border-radius: 999px; }
+        .interview-shell .lk-video-conference .lk-control-bar { display: none !important; }
+        .interview-shell .custom-controls { position: absolute; left: 0; right: 0; bottom: 16px; z-index: 40; display: flex; justify-content: center; pointer-events: none; padding: 0 16px; }
+        .interview-shell .custom-controls .lk-control-bar { display: flex !important; gap: 10px; margin: 0; padding: 0; width: auto; max-width: none; background: transparent; border: 0; box-shadow: none; pointer-events: auto; }
+        .interview-shell .custom-controls .lk-button { border-radius: 999px; width: 46px; height: 46px; border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(2, 6, 23, 0.72); backdrop-filter: blur(8px); }
+        .interview-shell .custom-controls .lk-button:hover { background: rgba(15, 23, 42, 0.9); }
+        .interview-shell .custom-controls .lk-disconnect-button { background: rgba(220, 38, 38, 0.9); border-color: rgba(254, 202, 202, 0.5); }
+        .interview-shell .custom-controls .lk-disconnect-button:hover { background: rgba(185, 28, 28, 0.95); }
         `}
       </style>
       <div
@@ -121,7 +124,7 @@ export const InterviewRoom: React.FC<InterviewRoomProps> = ({
                 serverUrl={serverUrl}
                 connectOptions={{ autoSubscribe: true }}
                 data-lk-theme="default"
-                className="h-full"
+                className="relative h-full"
                 onConnected={() => setIsConnected(true)}
                 onDisconnected={() => {
                   // When disconnected (for example via the Leave control), navigate

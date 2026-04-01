@@ -63,6 +63,25 @@ class AppConfig(BaseSettings):
 
         legacy_model = (self.openai_model or "").strip()
         return legacy_model or "llama-3.3-70b-versatile"
+
+    @property
+    def effective_groq_sdk_base_url(self) -> str:
+        """
+        Normalize Groq SDK base URL.
+        The Groq SDK expects API host (for example https://api.groq.com) and
+        internally targets /openai/v1 routes. Some configs store
+        https://api.groq.com/openai/v1 for OpenAI-compatible clients.
+        """
+        base = (self.groq_base_url or "").strip().rstrip("/")
+        if not base:
+            return "https://api.groq.com"
+
+        lowered = base.lower()
+        suffix = "/openai/v1"
+        if lowered.endswith(suffix):
+            return base[: -len(suffix)]
+
+        return base
     
     # LiveKit Server Config (optional for local/dev)
     livekit_url: str | None = None

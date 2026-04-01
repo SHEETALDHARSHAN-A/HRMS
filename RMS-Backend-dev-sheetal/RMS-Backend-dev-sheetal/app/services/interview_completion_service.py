@@ -318,7 +318,7 @@ class InterviewCompletionService:
 		if not self._can_call_groq():
 			return fallback
 
-		client = AsyncGroq(api_key=settings.effective_groq_api_key)
+		client = self._build_groq_client()
 		transcript_excerpt = conversation_text[-14000:] if conversation_text else "No transcript captured."
 
 		if coding_submission is not None:
@@ -764,3 +764,15 @@ Return only valid JSON.
 			return False
 		api_key = (getattr(settings, "effective_groq_api_key", "") or "").strip()
 		return api_key.startswith("gsk_")
+
+	@staticmethod
+	def _build_groq_client() -> Any:
+		api_key = settings.effective_groq_api_key
+		base_url = (getattr(settings, "effective_groq_sdk_base_url", "") or "").strip()
+		if not base_url:
+			return AsyncGroq(api_key=api_key)
+		try:
+			return AsyncGroq(api_key=api_key, base_url=base_url)
+		except TypeError:
+			logger.warning("Groq SDK version does not accept base_url, using default client base URL")
+			return AsyncGroq(api_key=api_key)

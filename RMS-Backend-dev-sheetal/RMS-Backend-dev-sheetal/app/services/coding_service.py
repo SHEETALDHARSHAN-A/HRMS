@@ -805,7 +805,7 @@ class CodingService:
         if not self._can_call_groq():
             return fallback_question
 
-        client = AsyncGroq(api_key=settings.effective_groq_api_key)
+        client = self._build_groq_client()
         prompt = f"""
 Generate one coding interview question as strict JSON with keys:
 - title (string)
@@ -870,7 +870,7 @@ Return only valid JSON.
         if not self._can_call_groq():
             return []
 
-        client = AsyncGroq(api_key=settings.effective_groq_api_key)
+        client = self._build_groq_client()
         prompt = f"""
 Generate 5 coding test cases for the following question.
 Return strict JSON with one key `testCases`.
@@ -930,7 +930,7 @@ Constraints:
         type_text = question_type or "objective"
         category_text = ", ".join(categories or []) or "general aptitude"
         custom_text = ", ".join(custom_prompts or []) or "none"
-        client = AsyncGroq(api_key=settings.effective_groq_api_key)
+        client = self._build_groq_client()
 
         prompt = f"""
 Generate {question_count} MCQ interview questions as strict JSON object with key `questions`.
@@ -1456,7 +1456,7 @@ Context:
         if not self._can_call_groq():
             return None
 
-        client = AsyncGroq(api_key=settings.effective_groq_api_key)
+        client = self._build_groq_client()
         prompt = f"""
 Evaluate whether this code passes each test case. Return strict JSON object with:
 - results: array of {{id, passed, actualOutput, notes}}
@@ -1606,7 +1606,7 @@ Test cases:
                 **fallback,
                 "source": "heuristic-quality",
             }
-        client = AsyncGroq(api_key=settings.effective_groq_api_key)
+        client = self._build_groq_client()
         prompt = f"""
 Evaluate this coding submission and return strict JSON with keys:
 - score (integer 0-100)
@@ -2341,3 +2341,15 @@ Return only valid JSON.
             return False
         api_key = (getattr(settings, "effective_groq_api_key", "") or "").strip()
         return api_key.startswith("gsk_")
+
+    @staticmethod
+    def _build_groq_client() -> Any:
+        api_key = settings.effective_groq_api_key
+        base_url = (getattr(settings, "effective_groq_sdk_base_url", "") or "").strip()
+        if not base_url:
+            return AsyncGroq(api_key=api_key)
+        try:
+            return AsyncGroq(api_key=api_key, base_url=base_url)
+        except TypeError:
+            logger.warning("Groq SDK version does not accept base_url, using default client base URL")
+            return AsyncGroq(api_key=api_key)

@@ -7,11 +7,13 @@ import {
   ChevronDown,
   FileText,
   Loader2,
+  RefreshCw,
   TrendingUp,
   Users,
   XSquare,
 } from 'lucide-react';
 import { getActiveJobPosts, getAllJobPosts, getJobCandidates } from '../../api/jobApi';
+import { getJobRoundOverview, type RoundOverview } from '../../api/recruitmentApi';
 import { useToast } from '../../context/ModalContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -95,6 +97,81 @@ const stageConfig = [
 
 type StageKey = (typeof stageConfig)[number]['key'];
 
+const DASHBOARD_REFRESH_INTERVAL_MS = 15000;
+
+interface RefreshOptions {
+  silent?: boolean;
+}
+
+interface JobRoundStats {
+  roundCount: number;
+  l1: number;
+  l2: number;
+  l3: number;
+  totalInterviewed: number;
+}
+
+const toCount = (value: unknown): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(parsed));
+};
+
+const resolveRoundCountFromJob = (job: any): number => {
+  const rounds = job?.interview_rounds ?? job?.interviewRounds ?? job?.rounds;
+  if (Array.isArray(rounds)) {
+    return rounds.length;
+  }
+
+  return toCount(
+    job?.rounds_count ??
+      job?.roundsCount ??
+      job?.interview_round_count ??
+      job?.interviewRoundCount
+  );
+};
+
+const buildJobRoundStatsMap = (rows: RoundOverview[]): Map<string, JobRoundStats> => {
+  const groupedByJob = new Map<string, RoundOverview[]>();
+
+  for (const row of rows) {
+    if (!row?.job_id) {
+      continue;
+    }
+    const existing = groupedByJob.get(row.job_id) ?? [];
+    existing.push(row);
+    groupedByJob.set(row.job_id, existing);
+  }
+
+  const statsByJob = new Map<string, JobRoundStats>();
+
+  groupedByJob.forEach((jobRows, jobId) => {
+    const sorted = [...jobRows].sort((a, b) => toCount(a.round_order) - toCount(b.round_order));
+    const byOrder = new Map<number, number>();
+
+    sorted.forEach((row, index) => {
+      const order = toCount(row.round_order) || index + 1;
+      byOrder.set(order, toCount(row.total_candidates));
+    });
+
+    const l1 = byOrder.get(1) ?? toCount(sorted[0]?.total_candidates);
+    const l2 = byOrder.get(2) ?? toCount(sorted[1]?.total_candidates);
+    const l3 = byOrder.get(3) ?? toCount(sorted[2]?.total_candidates);
+
+    statsByJob.set(jobId, {
+      roundCount: sorted.length,
+      l1,
+      l2,
+      l3,
+      totalInterviewed: l1 + l2 + l3,
+    });
+  });
+
+  return statsByJob;
+};
+
 const isRoundEnabled = (job: JobPostStats, stageKey: StageKey): boolean => {
   if (stageKey === 'l2_interview') {
     return job.interview_rounds >= 2;
@@ -156,7 +233,7 @@ const candidateBelongsToStage = (candidate: any, stageKey: StageKey): boolean =>
   });
 };
 
-const mapFetchedJob = (job: any): JobPostStats => {
+const mapFetchedJob = (job: any, roundStats?: JobRoundStats): JobPostStats => {
   const jobId = job.job_id ?? job.jobId ?? job.id ?? '';
   const rawActive = job.is_active ?? job.isActive ?? job.active ?? job.enabled;
   const isActive =
@@ -169,28 +246,37 @@ const mapFetchedJob = (job: any): JobPostStats => {
           : Boolean(rawActive);
 
   const profileCounts = job.profile_counts ?? job.profileCounts ?? null;
-  const shortlisted = profileCounts?.shortlisted ?? job.shortlisted ?? job.shortlisted_count ?? 0;
-  const rejected = profileCounts?.rejected ?? job.rejected ?? job.rejected_count ?? 0;
-  const underReview = profileCounts?.under_review ?? job.under_review ?? job.underReview ?? 0;
-  const onboarding = profileCounts?.onboarding ?? job.onboarding ?? 0;
+  const shortlisted = toCount(profileCounts?.shortlisted ?? job.shortlisted ?? job.shortlisted_count);
+  const rejected = toCount(profileCounts?.rejected ?? job.rejected ?? job.rejected_count);
+  const underReview = toCount(profileCounts?.under_review ?? job.under_review ?? job.underReview);
+  const onboarding = toCount(profileCounts?.onboarding ?? job.onboarding ?? job.hired ?? job.total_hired);
   const interviewsScheduled =
-    profileCounts?.interviews_scheduled ??
-    profileCounts?.interviews ??
-    job.interviews ??
-    job.interview_count ??
-    job.interviews_count ??
-    0;
+    toCount(
+      profileCounts?.interviews_scheduled ??
+        profileCounts?.interviews ??
+        job.interviews ??
+        job.interview_count ??
+        job.interviews_count
+    );
 
   const totalApplications =
-    profileCounts?.applied ?? job.total_applications ?? shortlisted + rejected + underReview + onboarding;
+    toCount(
+      profileCounts?.applied ??
+        job.total_applications ??
+        job.total_candidates ??
+        shortlisted + rejected + underReview + onboarding
+    );
 
   const title = String(job.job_title || 'Untitled Job');
-  const interviewRounds = title.toLowerCase().includes('senior') || title.toLowerCase().includes('lead') ? 3 : 2;
+  const interviewRounds =
+    roundStats?.roundCount ||
+    resolveRoundCountFromJob(job) ||
+    (roundStats?.l3 ? 3 : roundStats?.l2 ? 2 : roundStats?.l1 ? 1 : 0);
 
-  const interviewsInProgress = Math.max(0, interviewsScheduled - onboarding);
-  const l1 = Math.max(0, Math.floor(interviewsInProgress * 0.5));
-  const l2 = interviewRounds >= 2 ? Math.max(0, Math.floor(interviewsInProgress * (interviewRounds === 2 ? 0.5 : 0.3))) : 0;
-  const l3 = interviewRounds >= 3 ? Math.max(0, interviewsInProgress - l1 - l2) : 0;
+  const l1 = roundStats?.l1 ?? toCount(job.l1_interview ?? interviewsScheduled);
+  const l2 = roundStats?.l2 ?? toCount(job.l2_interview);
+  const l3 = roundStats?.l3 ?? toCount(job.l3_interview);
+  const totalInterviewed = roundStats?.totalInterviewed ?? toCount(job.total_interviewed ?? l1 + l2 + l3);
 
   return {
     job_id: jobId,
@@ -208,7 +294,7 @@ const mapFetchedJob = (job: any): JobPostStats => {
     l2_interview: l2,
     l3_interview: l3,
     hired: onboarding,
-    total_interviewed: l1 + l2 + l3,
+    total_interviewed: totalInterviewed,
     total_hired: onboarding,
   };
 };
@@ -220,6 +306,7 @@ export default function Dashboard() {
   const [jobCandidates, setJobCandidates] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const { showToast } = useToast();
 
   const selectedJob = useMemo(() => jobs.find((job) => job.job_id === selectedJobId) ?? null, [jobs, selectedJobId]);
@@ -248,16 +335,24 @@ export default function Dashboard() {
     };
   }, [selectedJob, data]);
 
-  const fetchJobStats = useCallback(async () => {
-    setIsLoading(true);
+  const fetchJobStats = useCallback(async (options: RefreshOptions = {}) => {
+    if (!options.silent) {
+      setIsLoading(true);
+    }
 
     try {
-      const [allRes, activeRes] = await Promise.all([getAllJobPosts(), getActiveJobPosts()]);
+      const [allRes, activeRes, roundOverviewRes] = await Promise.all([
+        getAllJobPosts(),
+        getActiveJobPosts(),
+        getJobRoundOverview(),
+      ]);
 
       if (!allRes.success) {
-        showToast(allRes.error || 'Failed to load dashboard data.', 'error');
-        setData(null);
-        setJobs([]);
+        if (!options.silent) {
+          showToast(allRes.error || 'Failed to load dashboard data.', 'error');
+          setData(null);
+          setJobs([]);
+        }
         return;
       }
 
@@ -269,14 +364,21 @@ export default function Dashboard() {
         : [];
 
       const activeJobIds = new Set(activeJobsRaw.map((job: any) => job.job_id ?? job.jobId ?? job.id));
+      const roundOverviewRows = roundOverviewRes.success
+        ? roundOverviewRes.data?.job_round_overview ?? []
+        : [];
+      const roundStatsByJob = buildJobRoundStatsMap(roundOverviewRows);
 
-      const mappedJobs: JobPostStats[] = allJobsRaw.map((job: any) => {
-        const mapped = mapFetchedJob(job);
-        return {
-          ...mapped,
-          is_active: activeJobIds.has(mapped.job_id),
-        };
-      });
+      const mappedJobs: JobPostStats[] = allJobsRaw
+        .map((job: any) => {
+          const jobId = String(job.job_id ?? job.jobId ?? job.id ?? '');
+          const mapped = mapFetchedJob(job, roundStatsByJob.get(jobId));
+          return {
+            ...mapped,
+            is_active: activeJobIds.has(mapped.job_id),
+          };
+        })
+        .filter((job: JobPostStats) => Boolean(job.job_id));
 
       const dashboardData: DashboardData = {
         total_jobs: mappedJobs.length,
@@ -291,37 +393,49 @@ export default function Dashboard() {
 
       setData(dashboardData);
       setJobs(mappedJobs);
+      setLastUpdatedAt(new Date());
 
-      if (!selectedJobId) {
+      setSelectedJobId((currentSelectedJobId) => {
+        if (currentSelectedJobId && mappedJobs.some((job) => job.job_id === currentSelectedJobId)) {
+          return currentSelectedJobId;
+        }
+
         const topActiveJob = mappedJobs
           .filter((job) => job.is_active)
           .sort((a, b) => b.total_applications - a.total_applications)[0];
-        if (topActiveJob) {
-          setSelectedJobId(topActiveJob.job_id);
-        }
-      }
+
+        return topActiveJob?.job_id ?? null;
+      });
     } catch (error: any) {
-      showToast(error?.message || 'An error occurred while fetching dashboard data.', 'error');
-      setData(null);
-      setJobs([]);
+      if (!options.silent) {
+        showToast(error?.message || 'An error occurred while fetching dashboard data.', 'error');
+        setData(null);
+        setJobs([]);
+      }
     } finally {
-      setIsLoading(false);
+      if (!options.silent) {
+        setIsLoading(false);
+      }
     }
-  }, [showToast, selectedJobId]);
+  }, [showToast]);
 
   const fetchCandidatesForJob = useCallback(
-    async (jobId?: string | null) => {
+    async (jobId?: string | null, options: RefreshOptions = {}) => {
       if (!jobId) {
         setJobCandidates([]);
         return;
       }
 
-      setCandidatesLoading(true);
+      if (!options.silent) {
+        setCandidatesLoading(true);
+      }
       try {
         const response = await getJobCandidates(jobId);
         if (!response.success) {
-          showToast(response.error || 'Failed to fetch candidates for this job.', 'error');
-          setJobCandidates([]);
+          if (!options.silent) {
+            showToast(response.error || 'Failed to fetch candidates for this job.', 'error');
+            setJobCandidates([]);
+          }
           return;
         }
 
@@ -329,22 +443,41 @@ export default function Dashboard() {
         const list = Array.isArray(payload) ? payload : payload?.profiles ?? payload?.candidates ?? [];
         setJobCandidates(list || []);
       } catch (error: any) {
-        showToast(error?.message || 'Error fetching candidates.', 'error');
-        setJobCandidates([]);
+        if (!options.silent) {
+          showToast(error?.message || 'Error fetching candidates.', 'error');
+          setJobCandidates([]);
+        }
       } finally {
-        setCandidatesLoading(false);
+        if (!options.silent) {
+          setCandidatesLoading(false);
+        }
       }
     },
     [showToast]
   );
 
   useEffect(() => {
-    fetchJobStats();
+    void fetchJobStats();
   }, [fetchJobStats]);
 
   useEffect(() => {
-    fetchCandidatesForJob(selectedJobId);
+    void fetchCandidatesForJob(selectedJobId);
   }, [selectedJobId, fetchCandidatesForJob]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        return;
+      }
+
+      void fetchJobStats({ silent: true });
+      void fetchCandidatesForJob(selectedJobId, { silent: true });
+    }, DASHBOARD_REFRESH_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [fetchCandidatesForJob, fetchJobStats, selectedJobId]);
 
   const activeJobs = useMemo(() => jobs.filter((job) => job.is_active), [jobs]);
 
@@ -359,32 +492,25 @@ export default function Dashboard() {
     return value;
   }, []);
 
-  const todayActivity = useMemo(() => {
-    const countsByJob: Record<string, number> = {};
-
-    for (const candidate of jobCandidates) {
-      const date = parseCandidateDate(candidate);
-      if (!date) {
-        continue;
-      }
-
-      const normalized = new Date(date);
-      normalized.setHours(0, 0, 0, 0);
-      if (normalized.getTime() !== today.getTime()) {
-        continue;
-      }
-
-      const jobId =
-        candidate.job_id ?? candidate.jobId ?? candidate.job?.job_id ?? candidate.job?.id ?? selectedJob?.job_id ?? 'unknown';
-      countsByJob[jobId] = (countsByJob[jobId] || 0) + 1;
-    }
-
-    return jobs.map((job) => ({
-      id: job.job_id,
-      title: job.job_title,
-      count: countsByJob[job.job_id] ?? 0,
-    }));
-  }, [jobCandidates, jobs, selectedJob?.job_id, today]);
+  const todayCandidates = useMemo(
+    () =>
+      jobCandidates
+        .map((candidate) => ({ candidate, date: parseCandidateDate(candidate) }))
+        .filter((entry) => {
+          if (!entry.date) {
+            return false;
+          }
+          const normalized = new Date(entry.date);
+          normalized.setHours(0, 0, 0, 0);
+          return normalized.getTime() === today.getTime();
+        })
+        .sort((a, b) => {
+          const aTime = a.date ? a.date.getTime() : 0;
+          const bTime = b.date ? b.date.getTime() : 0;
+          return bTime - aTime;
+        }),
+    [jobCandidates, today]
+  );
 
   if (isLoading && !data) {
     return (
@@ -408,13 +534,17 @@ export default function Dashboard() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button onClick={fetchJobStats}>Retry</Button>
+          <Button
+            onClick={() => {
+              void fetchJobStats();
+            }}
+          >
+            Retry
+          </Button>
         </CardContent>
       </Card>
     );
   }
-
-  const maxTodayCount = Math.max(1, ...todayActivity.map((item) => item.count));
 
   return (
     <div className="space-y-6">
@@ -425,10 +555,27 @@ export default function Dashboard() {
             Live funnel insights for <span className="font-medium text-foreground">{displayMetrics.title}</span>.
           </p>
         </div>
-        <Badge variant="outline" className="gap-1.5">
-          <Calendar className="size-3.5" />
-          {new Date().toLocaleDateString()}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="gap-1.5">
+            <Calendar className="size-3.5" />
+            {new Date().toLocaleDateString()}
+          </Badge>
+          <Badge variant="secondary" className="gap-1.5">
+            <Activity className="size-3.5" />
+            Updated {lastUpdatedAt ? lastUpdatedAt.toLocaleTimeString() : '--:--'}
+          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void fetchJobStats();
+              void fetchCandidatesForJob(selectedJobId);
+            }}
+          >
+            <RefreshCw className={cn('size-4', isLoading && 'animate-spin')} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -687,22 +834,58 @@ export default function Dashboard() {
           <Card>
             <CardHeader>
               <CardTitle>Today's Activity</CardTitle>
-              <CardDescription>New candidate additions by job.</CardDescription>
+              <CardDescription>Live candidate updates for the selected job.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {todayActivity.slice(0, 7).map((item) => (
-                <div key={item.id} className="space-y-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="truncate">{item.title}</span>
-                    <span className="font-medium text-muted-foreground">{item.count}</span>
-                  </div>
-                  <Progress value={(item.count / maxTodayCount) * 100} />
-                </div>
-              ))}
-              {todayActivity.every((item) => item.count === 0) && (
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">
+                  {selectedJob
+                    ? `New candidates today in ${selectedJob.job_title}`
+                    : 'Select a job from the funnel to view live updates'}
+                </p>
+                <p className="text-2xl font-semibold">
+                  <NumberTicker value={todayCandidates.length} />
+                </p>
+              </div>
+
+              {!selectedJob && (
+                <p className="text-sm text-muted-foreground">
+                  Pick an active job from the funnel to inspect candidate updates.
+                </p>
+              )}
+
+              {selectedJob && todayCandidates.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                   No candidate timestamp updates were found for today.
                 </p>
+              )}
+
+              {selectedJob && todayCandidates.length > 0 && (
+                <ul className="space-y-2">
+                  {todayCandidates.slice(0, 7).map((entry, index) => (
+                    <li key={`today-candidate-${index}`} className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {entry.candidate?.name ??
+                            entry.candidate?.full_name ??
+                            entry.candidate?.profile_name ??
+                            'Unnamed candidate'}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {entry.candidate?.email ??
+                            entry.candidate?.profile_email ??
+                            entry.candidate?.contact ??
+                            ''}
+                        </p>
+                      </div>
+                      <Badge variant="outline">
+                        {entry.date
+                          ? entry.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          : '--:--'}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>

@@ -81,8 +81,8 @@ class Transcript(Base):
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     profile_id = Column(PG_UUID(as_uuid=True), ForeignKey('profiles.id'), nullable=False)
     job_id = Column(PG_UUID(as_uuid=True), ForeignKey('job_details.id'), nullable=False)
-    # This should be the 'interview_rounds.id' (the specific instance)
-    round_id = Column(PG_UUID(as_uuid=True), ForeignKey('interview_rounds.id'), nullable=True)
+    # Store canonical round identity from round_list.id
+    round_id = Column(PG_UUID(as_uuid=True), ForeignKey('round_list.id'), nullable=True)
     room_id = Column(String, index=True)
     conversation = Column(JSONB, nullable=False, default=list)
     start_time = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
@@ -260,7 +260,8 @@ def fetch_interview_context(room_name: str) -> Optional[Tuple[Dict, Dict, Dict, 
             db_ids = {
                 "job_id": str(job.id),
                 "profile_id": str(profile.id),
-                "round_id": str(interview_round.id) if interview_round else None,
+                "round_id": str(db_round_list_id) if db_round_list_id else None,
+                "interview_round_id": str(interview_round.id) if interview_round else None,
                 "round_list_id": str(db_round_list_id) if db_round_list_id else None,
                 "candidate_email": profile.email,
             }
@@ -297,11 +298,11 @@ def create_transcript_session(
                     round_uuid = None
 
                 if round_uuid:
-                    existing_round = db.query(InterviewRounds).filter(InterviewRounds.id == round_uuid).one_or_none()
+                    existing_round = db.query(RoundList).filter(RoundList.id == round_uuid).one_or_none()
                     resolved_round_id = round_uuid if existing_round else None
                 if not resolved_round_id:
                     logger.warning(
-                        "Transcript round_id %s does not map to interview_rounds.id; saving transcript with null round_id",
+                        "Transcript round_id %s does not map to round_list.id; saving transcript with null round_id",
                         round_id,
                     )
                 

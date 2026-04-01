@@ -13,6 +13,9 @@ from sqlalchemy import select, update, insert, delete, or_, case, text, func, di
 from app.db.models.curation_model import Curation
 from app.db.models.shortlist_model import Shortlist
 from app.db.models.resume_model import InterviewRounds, Profile
+from app.db.models.scheduling_model import Scheduling
+from app.db.models.coding_submission_model import CodingSubmission
+from app.db.models.transcript_model import Transcript
 from app.db.models.job_post_model import (
     JobDetails,
     JobSkills,
@@ -1011,23 +1014,41 @@ async def hard_delete_job_by_id(db: AsyncSession, job_id: str) -> bool:
     try:
         # Delete related records first to avoid foreign key constraint violations
         # Order matters: delete children before parent
-        
-        # 1. Delete evaluation criteria (depends on rounds and job)
+
+        # 1. Delete shortlist rows first (depends on curation/profile/job)
+        await db.execute(delete(Shortlist).where(Shortlist.job_id == job_uuid))
+
+        # 2. Delete interview schedules (depends on profile/interview_round/job)
+        await db.execute(delete(Scheduling).where(Scheduling.job_id == job_uuid))
+
+        # 3. Delete coding submissions and transcripts (depends on profile/round/job)
+        await db.execute(delete(CodingSubmission).where(CodingSubmission.job_id == job_uuid))
+        await db.execute(delete(Transcript).where(Transcript.job_id == job_uuid))
+
+        # 4. Delete curation (depends on profile/job)
+        await db.execute(delete(Curation).where(Curation.job_id == job_uuid))
+
+        # 5. Delete interview rounds and profiles
+        await db.execute(delete(InterviewRounds).where(InterviewRounds.job_id == job_uuid))
+        await db.execute(delete(Profile).where(Profile.job_id == job_uuid))
+
+        # 6. Delete round-linked config and criteria before round_list
         await db.execute(delete(EvaluationCriteria).where(EvaluationCriteria.job_id == job_uuid))
-        
-        # 2. Delete interview rounds
+        await db.execute(delete(AgentRoundConfig).where(AgentRoundConfig.job_id == job_uuid))
+
+        # 7. Delete rounds
         await db.execute(delete(RoundList).where(RoundList.job_id == job_uuid))
-        
-        # 3. Delete job skills
+
+        # 8. Delete job skills
         await db.execute(delete(JobSkills).where(JobSkills.job_id == job_uuid))
-        
-        # 4. Delete job descriptions
+
+        # 9. Delete job descriptions
         await db.execute(delete(JobDescription).where(JobDescription.job_id == job_uuid))
-        
-        # 5. Delete job locations
+
+        # 10. Delete job locations
         await db.execute(delete(JobLocations).where(JobLocations.job_id == job_uuid))
-        
-        # 6. Finally, delete the job itself
+
+        # 11. Finally, delete the job itself
         result = await db.execute(delete(JobDetails).where(JobDetails.id == job_uuid))
         rows_affected = result.rowcount
         
@@ -1066,38 +1087,42 @@ async def hard_delete_jobs_batch(db: AsyncSession, job_ids: List[str]) -> int:
 
     try:
         # Order matters: delete children before parent
-        # Complete dependency chain:
-        # shortlist → curation → (profiles, job_details)
-        # interview_rounds → (profiles, round_list) → job_details
-        
+        # Complete dependency chain includes scheduling/coding/transcripts as well.
+
         # 1. Delete shortlist first (child of curation, profiles, job_details)
         await db.execute(delete(Shortlist).where(Shortlist.job_id.in_(uuids)))
-        
-        # 2. Delete curation (child of profiles and job_details, parent of shortlist)
+
+        # 2. Delete interview schedules/submissions/transcripts before interview_rounds/profiles
+        await db.execute(delete(Scheduling).where(Scheduling.job_id.in_(uuids)))
+        await db.execute(delete(CodingSubmission).where(CodingSubmission.job_id.in_(uuids)))
+        await db.execute(delete(Transcript).where(Transcript.job_id.in_(uuids)))
+
+        # 3. Delete curation (child of profiles and job_details, parent of shortlist)
         await db.execute(delete(Curation).where(Curation.job_id.in_(uuids)))
-        
-        # 3. Delete interview_rounds (child of both profiles and round_list)
+
+        # 4. Delete interview_rounds (child of both profiles and round_list)
         await db.execute(delete(InterviewRounds).where(InterviewRounds.job_id.in_(uuids)))
-        
-        # 4. Delete profiles (child of job_details, parent of interview_rounds/curation)
+
+        # 5. Delete profiles (child of job_details, parent of interview_rounds/curation)
         await db.execute(delete(Profile).where(Profile.job_id.in_(uuids)))
-        
-        # 5. Delete evaluation criteria (child of round_list and job)
+
+        # 6. Delete round-linked config/criteria before round_list
         await db.execute(delete(EvaluationCriteria).where(EvaluationCriteria.job_id.in_(uuids)))
-        
-        # 6. Delete round_list (child of job_details, parent of interview_rounds)
+        await db.execute(delete(AgentRoundConfig).where(AgentRoundConfig.job_id.in_(uuids)))
+
+        # 7. Delete round_list (child of job_details, parent of interview_rounds)
         await db.execute(delete(RoundList).where(RoundList.job_id.in_(uuids)))
-        
-        # 7. Delete job skills
+
+        # 8. Delete job skills
         await db.execute(delete(JobSkills).where(JobSkills.job_id.in_(uuids)))
-        
-        # 8. Delete job descriptions
+
+        # 9. Delete job descriptions
         await db.execute(delete(JobDescription).where(JobDescription.job_id.in_(uuids)))
-        
-        # 9. Delete job locations
+
+        # 10. Delete job locations
         await db.execute(delete(JobLocations).where(JobLocations.job_id.in_(uuids)))
-        
-        # 10. Finally, delete the jobs themselves
+
+        # 11. Finally, delete the jobs themselves
         result = await db.execute(delete(JobDetails).where(JobDetails.id.in_(uuids)))
         rows_affected = result.rowcount
         
